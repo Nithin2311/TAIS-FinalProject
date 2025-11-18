@@ -1,5 +1,3 @@
-[file name]: config.py
-[file content begin]
 """
 Enhanced configuration for Resume Classification System with Bias Detection
 CAI 6605 - Trustworthy AI Systems - Final Project
