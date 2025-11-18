@@ -101,7 +101,7 @@ def main():
     class_weights = class_weights.astype(np.float32)
     print("Computed class weights for imbalanced data")
     
-    # Training configuration
+    # Training configuration - FIXED: Updated parameter names for newer Transformers version
     training_args = TrainingArguments(
         output_dir=Config.MODEL_SAVE_PATH,
         num_train_epochs=Config.NUM_EPOCHS,
@@ -110,8 +110,8 @@ def main():
         learning_rate=Config.LEARNING_RATE,
         warmup_ratio=Config.WARMUP_RATIO,
         weight_decay=Config.WEIGHT_DECAY,
-        evaluation_strategy="epoch",
-        save_strategy="epoch",
+        eval_strategy="epoch",  # Fixed: changed from evaluation_strategy
+        save_strategy="epoch",  # Fixed: parameter name remains the same
         load_best_model_at_end=True,
         metric_for_best_model="accuracy",
         greater_is_better=True,
@@ -122,6 +122,7 @@ def main():
     )
     
     # Early stopping callback
+    from transformers import EarlyStoppingCallback
     early_stopping = EarlyStoppingCallback(
         early_stopping_patience=Config.EARLY_STOPPING_PATIENCE
     )
