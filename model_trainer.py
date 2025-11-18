@@ -54,8 +54,8 @@ class CustomTrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.class_weights = class_weights
     
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        """Compute loss with class weights - compatible with newer Transformers"""
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        """Compute loss with class weights - fixed for newer Transformers version"""
         labels = inputs.get("labels")
         outputs = model(**inputs)
         logits = outputs.get("logits")
