@@ -49,7 +49,7 @@ def save_training_data(X_train, X_val, X_test, y_train, y_val, y_test, label_map
 def main():
     """Main training pipeline"""
     print("=" * 60)
-    print("RESUME CLASSIFICATION SYSTEM - MODEL TRAINING")
+    print("RESUME CLASSIFICATION SYSTEM - BASELINE MODEL TRAINING")
     print("=" * 60)
     print("CAI 6605: Trustworthy AI Systems")
     print("Group 15: Nithin Palyam, Lorenzo LaPlace")
@@ -101,7 +101,7 @@ def main():
     class_weights = class_weights.astype(np.float32)
     print("Computed class weights for imbalanced data")
     
-    # Training configuration - FIXED: Updated parameter names for newer Transformers version
+    # Training configuration
     training_args = TrainingArguments(
         output_dir=Config.MODEL_SAVE_PATH,
         num_train_epochs=Config.NUM_EPOCHS,
@@ -110,8 +110,8 @@ def main():
         learning_rate=Config.LEARNING_RATE,
         warmup_ratio=Config.WARMUP_RATIO,
         weight_decay=Config.WEIGHT_DECAY,
-        eval_strategy="epoch",  # Fixed: changed from evaluation_strategy
-        save_strategy="epoch",  # Fixed: parameter name remains the same
+        eval_strategy="epoch",
+        save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="accuracy",
         greater_is_better=True,
@@ -140,7 +140,7 @@ def main():
     
     # Training
     print("\n" + "=" * 60)
-    print("MODEL TRAINING STARTED")
+    print("BASELINE MODEL TRAINING STARTED")
     print("=" * 60)
     print(f"Epochs: {Config.NUM_EPOCHS}")
     print(f"Batch Size: {Config.BATCH_SIZE}")
@@ -150,35 +150,40 @@ def main():
     
     # Train model
     trainer.train()
-    print("\nTraining Complete!")
+    print("\nBaseline Model Training Complete!")
     
     # Save model
     trainer.save_model(Config.MODEL_SAVE_PATH)
     tokenizer.save_pretrained(Config.MODEL_SAVE_PATH)
-    print(f"Model saved to {Config.MODEL_SAVE_PATH}")
+    print(f"Baseline model saved to {Config.MODEL_SAVE_PATH}")
     
     # Standard evaluation
     test_results = evaluate_model(trainer, test_dataset, label_map)
     
-    # Save test results
+    # Save test results as baseline results
     with open('results/training_results.json', 'w') as f:
+        json.dump(test_results, f, indent=2)
+    
+    # Also save as baseline results for clarity
+    with open('results/baseline_results.json', 'w') as f:
         json.dump(test_results, f, indent=2)
     
     # Project summary
     print("\n" + "=" * 60)
-    print("MODEL TRAINING COMPLETE!")
+    print("BASELINE MODEL TRAINING COMPLETE!")
     print("=" * 60)
     accuracy = test_results['eval_accuracy']
     print(f"FINAL TEST ACCURACY: {accuracy*100:.2f}%")
     
     if accuracy > 0.80:
-        print("TARGET ACHIEVED: >80% accuracy")
+        print("✅ TARGET ACHIEVED: >80% accuracy")
     else:
-        print("TARGET NOT MET: <80% accuracy")
+        print("⚠️  TARGET NOT MET: <80% accuracy")
     
     print("\nNext steps:")
-    print("Run bias analysis: python bias_analysis.py")
-    print("Launch web interface: python gradio_app.py")
+    print("Run comprehensive bias analysis: python bias_analysis.py")
+    print("This will train the debiased model and compare both models")
+    print("Launch enhanced web interface: python gradio_app.py")
     print("=" * 60)
     
     return trainer, tokenizer, test_results
