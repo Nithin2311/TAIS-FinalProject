@@ -1,5 +1,5 @@
 """
-Enhanced Gradio web interface with Bias Analysis
+Enhanced Gradio web interface with Dual Model Comparison
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
@@ -9,54 +9,83 @@ import torch
 import json
 import pandas as pd
 import os
-import matplotlib.pyplot as plt
+import numpy as np
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from data_processor import ResumePreprocessor
-from bias_analyzer import BiasAnalyzer, BiasVisualization
+from bias_analyzer import BiasAnalyzer, BiasVisualization, DemographicInference
 
 
-class EnhancedResumeClassifier:
-    def __init__(self, model_path='models/resume_classifier', label_map_path='data/processed/label_map.json'):
+class DualModelResumeClassifier:
+    def __init__(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.cleaner = ResumePreprocessor()
+        self.demo_inference = DemographicInference()
+        
+        # Load both models
+        self.models = {}
+        self.tokenizers = {}
+        self.bias_reports = {}
+        self.performance_results = {}
         
         try:
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_path)
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-            self.model.to(self.device)
-            self.model.eval()
+            # Load baseline model
+            self.models['baseline'] = AutoModelForSequenceClassification.from_pretrained('models/resume_classifier')
+            self.tokenizers['baseline'] = AutoTokenizer.from_pretrained('models/resume_classifier')
+            self.models['baseline'].to(self.device)
+            self.models['baseline'].eval()
             
-            with open(label_map_path, 'r') as f:
+            # Load debiased model
+            self.models['debiased'] = AutoModelForSequenceClassification.from_pretrained('models/resume_classifier_debiased')
+            self.tokenizers['debiased'] = AutoTokenizer.from_pretrained('models/resume_classifier_debiased')
+            self.models['debiased'].to(self.device)
+            self.models['debiased'].eval()
+            
+            # Load label map
+            with open('data/processed/label_map.json', 'r') as f:
                 self.label_map = json.load(f)
             
-            self.cleaner = ResumePreprocessor()
-            self.bias_analyzer = BiasAnalyzer(self.model, self.tokenizer, self.label_map, self.device)
+            # Load bias reports
+            with open('results/baseline_bias_report.json', 'r') as f:
+                self.bias_reports['baseline'] = json.load(f)
             
-            # Load bias report if exists
-            self.bias_report = None
-            if os.path.exists('results/comprehensive_bias_report.json'):
-                with open('results/comprehensive_bias_report.json', 'r') as f:
-                    self.bias_report = json.load(f)
+            with open('results/debiased_bias_report.json', 'r') as f:
+                self.bias_reports['debiased'] = json.load(f)
             
-            print("Enhanced model loaded successfully with bias analysis!")
+            # Load performance results
+            with open('results/training_results.json', 'r') as f:
+                self.performance_results['baseline'] = json.load(f)
+            
+            with open('results/debiased_results.json', 'r') as f:
+                self.performance_results['debiased'] = json.load(f)
+            
+            # Load comparison
+            with open('results/model_comparison.json', 'r') as f:
+                self.comparison = json.load(f)
+            
+            print("✅ Dual model classifier loaded successfully!")
+            print("✅ Both baseline and debiased models are available!")
             
         except Exception as e:
-            print(f"Error loading model: {e}")
-            print("Please run train.py first to train the model")
+            print(f"❌ Error loading models: {e}")
+            print("Please run 'python bias_analysis.py' first to train both models and generate analysis")
             raise
     
-    def predict(self, text):
-        """Classify resume text and return predictions with bias awareness"""
+    def predict(self, text, model_type='baseline'):
+        """Classify resume text with specified model"""
         if not text or len(text.strip()) < 50:
-            return "Please enter at least 50 characters of resume text.", None, None, None
+            return "Please enter at least 50 characters of resume text.", None, None, None, None
         
         try:
-            # Preprocess with enhanced cleaning
+            model = self.models[model_type]
+            tokenizer = self.tokenizers[model_type]
+            
+            # Preprocess text
             cleaned_text = self.cleaner.clean_text(text)
             technical_skills = self.cleaner.extract_technical_skills(text)
             enhanced_text = cleaned_text + ' ' + technical_skills
             
-            # Tokenize
-            inputs = self.tokenizer(
+            # Tokenize and predict
+            inputs = tokenizer(
                 enhanced_text,
                 truncation=True,
                 padding='max_length',
@@ -64,14 +93,13 @@ class EnhancedResumeClassifier:
                 return_tensors='pt'
             ).to(self.device)
             
-            # Get predictions
             with torch.no_grad():
-                outputs = self.model(**inputs)
+                outputs = model(**inputs)
                 probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
                 top_probs, top_indices = torch.topk(probs[0], 5)
             
             # Format results
-            result_text = "## Classification Results\n\n"
+            result_text = f"## {model_type.upper()} Model Classification Results\n\n"
             
             # Top prediction
             top_idx = top_indices[0].item()
@@ -81,22 +109,26 @@ class EnhancedResumeClassifier:
             result_text += f"**Primary Prediction:** {top_category}\n"
             result_text += f"**Confidence:** {top_confidence*100:.1f}%\n\n"
             
+            # Model performance info
+            model_perf = self.performance_results[model_type]
+            result_text += f"**Model Accuracy:** {model_perf['eval_accuracy']*100:.1f}%\n"
+            
             # Bias awareness
-            if self.bias_report:
-                category_bias = self.bias_report['category_bias_analysis'].get(top_category, {})
-                if category_bias:
-                    overall_accuracy = category_bias.get('overall_accuracy', 0)
-                    result_text += f"**Category Accuracy:** {overall_accuracy*100:.1f}%\n"
-                    
-                    # Check for bias warnings
-                    demo_analysis = category_bias.get('demographic_analysis', {})
-                    if demo_analysis.get('gender'):
-                        gender_accuracies = demo_analysis['gender']
-                        if len(gender_accuracies) > 1:
-                            acc_values = list(gender_accuracies.values())
-                            max_diff = max(acc_values) - min(acc_values)
-                            if max_diff > 0.1:
-                                result_text += f"**Gender Bias Alert:** {max_diff*100:.1f}% accuracy difference\n"
+            bias_report = self.bias_reports[model_type]
+            category_bias = bias_report['category_bias_analysis'].get(top_category, {})
+            if category_bias:
+                overall_accuracy = category_bias.get('overall_accuracy', 0)
+                result_text += f"**Category Accuracy:** {overall_accuracy*100:.1f}%\n"
+                
+                # Check for bias warnings
+                demo_analysis = category_bias.get('demographic_analysis', {})
+                if demo_analysis.get('gender'):
+                    gender_accuracies = demo_analysis['gender']
+                    if len(gender_accuracies) > 1:
+                        acc_values = list(gender_accuracies.values())
+                        max_diff = max(acc_values) - min(acc_values)
+                        if max_diff > 0.1:
+                            result_text += f"⚠️ **Gender Bias Alert:** {max_diff*100:.1f}% accuracy difference\n"
             
             # Confidence level
             if top_confidence > 0.8:
@@ -121,74 +153,118 @@ class EnhancedResumeClassifier:
             df = pd.DataFrame(predictions_data, columns=['Category', 'Confidence'])
             
             # Bias score
-            bias_score = self._calculate_bias_score(cleaned_text, top_category)
+            bias_score = self._calculate_bias_score(cleaned_text, top_category, model_type)
             
-            return result_text, df, top_confidence, bias_score
+            # Demographic inference
+            demographics = self._infer_demographics(text)
+            
+            return result_text, df, top_confidence, bias_score, demographics
             
         except Exception as e:
-            return f"Error during prediction: {str(e)}", None, None, None
+            return f"Error during prediction: {str(e)}", None, None, None, None
     
-    def _calculate_bias_score(self, text, predicted_category):
+    def _calculate_bias_score(self, text, predicted_category, model_type):
         """Calculate bias score for the prediction"""
-        from bias_analyzer import DemographicInference
+        bias_report = self.bias_reports[model_type]
         
-        demo_inference = DemographicInference()
-        gender = demo_inference.infer_gender(text)
-        diversity = demo_inference.infer_diversity_background(text)
+        # Base score from model's overall bias
+        name_bias = bias_report['name_substitution_bias']['average_gender_bias']
+        base_score = name_bias
         
-        # Base score
-        bias_score = 0.5
+        # Adjust based on category bias
+        category_bias = bias_report['category_bias_analysis'].get(predicted_category, {})
+        if category_bias:
+            demo_analysis = category_bias.get('demographic_analysis', {})
+            if demo_analysis.get('gender'):
+                gender_accuracies = demo_analysis['gender']
+                if len(gender_accuracies) > 1:
+                    max_diff = max(gender_accuracies.values()) - min(gender_accuracies.values())
+                    base_score += max_diff
         
-        # Adjust based on demographic inference
-        if gender != 'unknown':
-            bias_score += 0.1
-        if diversity != 'neutral':
-            bias_score += 0.1
-        
-        return min(bias_score, 1.0)
+        return min(base_score, 1.0)
     
-    def get_bias_report_summary(self):
-        """Get summary of bias analysis for display"""
-        if not self.bias_report:
-            return "## Bias Analysis\n\nNo bias report available. Please run training first."
+    def _infer_demographics(self, text):
+        """Infer demographics from text"""
+        return {
+            'gender': self.demo_inference.infer_gender(text),
+            'diversity_background': self.demo_inference.infer_diversity_background(text),
+            'privilege_level': self.demo_inference.infer_privilege_level(text)
+        }
+    
+    def get_comparison_report(self):
+        """Generate comprehensive comparison report"""
+        if not hasattr(self, 'comparison'):
+            return "## Comparison Report\n\nNo comparison data available."
         
-        report = self.bias_report
-        summary_text = "## Comprehensive Bias Analysis Report\n\n"
+        comp = self.comparison
+        report = "## Baseline vs Debiased Model Comparison\n\n"
         
-        # Fairness metrics summary
-        summary_text += "### Fairness Metrics\n"
+        # Performance comparison
+        perf = comp['performance']
+        report += "### 📊 Performance Comparison\n"
+        report += f"- **Baseline Accuracy**: {perf['baseline_accuracy']*100:.2f}%\n"
+        report += f"- **Debiased Accuracy**: {perf['debiased_accuracy']*100:.2f}%\n"
+        report += f"- **Change**: {perf['accuracy_change_percent']:+.2f}%\n\n"
+        
+        # Bias reduction
+        bias_red = comp['bias_reduction']['name_bias']
+        report += "### ⚖️ Bias Reduction\n"
+        report += f"- **Name-based Bias Reduction**: {bias_red['reduction_percent']:+.2f}%\n"
+        report += f"- Baseline Bias: {bias_red['baseline']:.3f}\n"
+        report += f"- Debiased Bias: {bias_red['debiased']:.3f}\n\n"
+        
+        # Fairness improvements
+        report += "### 📈 Fairness Improvements\n"
+        for demo_type, improvement in comp['fairness_improvement'].items():
+            arrow = "↗️" if improvement['improvement'] > 0 else "↘️"
+            report += f"- **{demo_type.title()}**: {improvement['improvement']:+.3f} {arrow}\n"
+        
+        # Overall assessment
+        assessment = comp['overall_assessment']
+        report += f"\n### 🎯 Overall Assessment\n"
+        report += f"- **Rating**: {assessment['rating']}\n"
+        report += f"- **Score**: {assessment['score']:.3f}\n"
+        report += f"- **Summary**: {assessment['summary']}\n"
+        
+        return report
+    
+    def get_bias_report(self, model_type):
+        """Get bias report for specific model"""
+        if model_type not in self.bias_reports:
+            return f"## Bias Analysis\n\nNo bias report available for {model_type} model."
+        
+        report = self.bias_reports[model_type]
+        summary = f"## {model_type.upper()} Model Bias Analysis\n\n"
+        
+        # Fairness metrics
+        summary += "### Fairness Metrics\n"
         for demo_type, metrics in report['fairness_metrics'].items():
-            summary_text += f"**{demo_type.upper()}:**\n"
-            summary_text += f"  - Demographic Parity: {metrics['demographic_parity']:.3f}\n"
-            summary_text += f"  - Equal Opportunity: {metrics['equal_opportunity']:.3f}\n"
-            summary_text += f"  - Accuracy Equality: {metrics['accuracy_equality']:.3f}\n\n"
+            summary += f"**{demo_type.upper()}:**\n"
+            summary += f"  - Demographic Parity: {metrics['demographic_parity']:.3f}\n"
+            summary += f"  - Equal Opportunity: {metrics['equal_opportunity']:.3f}\n"
+            summary += f"  - Accuracy Equality: {metrics['accuracy_equality']:.3f}\n\n"
         
         # Name bias
         name_bias = report['name_substitution_bias']
-        summary_text += f"### Name-based Bias\n"
-        summary_text += f"**Average Gender Bias:** {name_bias['average_gender_bias']:.3f}\n"
-        summary_text += f"**Male-Female Disparity:** {name_bias['male_female_disparity']:.3f}\n\n"
+        summary += f"### Name-based Bias\n"
+        summary += f"**Average Gender Bias:** {name_bias['average_gender_bias']:.3f}\n"
+        summary += f"**Male-Female Disparity:** {name_bias['male_female_disparity']:.3f}\n\n"
         
         # Recommendations
-        summary_text += "### Recommendations\n"
+        summary += "### Recommendations\n"
         for i, rec in enumerate(report['recommendations'][:3], 1):
-            summary_text += f"{i}. {rec}\n"
+            summary += f"{i}. {rec}\n"
         
-        return summary_text
+        return summary
 
 
-def create_enhanced_interface():
-    """Create and launch enhanced Gradio interface with bias analysis"""
-    
-    # Check if model exists
-    if not os.path.exists('models/resume_classifier'):
-        print("Model not found! Please run train.py first.")
-        return None
+def create_dual_model_interface():
+    """Create Gradio interface with both models"""
     
     # Initialize classifier
-    classifier = EnhancedResumeClassifier()
+    classifier = DualModelResumeClassifier()
     
-    # Example resumes - fixed to ensure correct classification
+    # Example resumes
     examples = [
         """Software Engineer with 5+ years experience in Python, Django, React, and AWS. 
         Developed scalable web applications, implemented CI/CD pipelines, and led cross-functional teams.
@@ -203,32 +279,27 @@ def create_enhanced_interface():
         """Data Scientist specializing in machine learning and statistical analysis.
         Proficient in Python, R, SQL, TensorFlow, and Tableau. Experience with predictive modeling,
         A/B testing, and big data technologies including Spark and Hadoop.
-        Skills: Machine Learning, Python, SQL, TensorFlow, Data Analysis.""",
-        
-        """Marketing Manager with 6+ years in digital marketing strategy.
-        Expertise in SEO, SEM, social media marketing, and brand development.
-        Increased online engagement by 200% and reduced CAC by 30%.
-        Skills: Digital Marketing, SEO, SEM, Social Media, Brand Strategy."""
+        Skills: Machine Learning, Python, SQL, TensorFlow, Data Analysis."""
     ]
     
-    # Create enhanced Gradio interface
-    with gr.Blocks(title="Bias-Aware Resume Classifier - Final Project", theme=gr.themes.Soft()) as demo:
+    with gr.Blocks(title="Dual Model Resume Classifier - Final Project", theme=gr.themes.Soft()) as demo:
         gr.Markdown("""
-        # AI-Powered Resume Classification System with Bias Detection
+        # 🤖 Dual Model Resume Classification System
         ## CAI 6605: Trustworthy AI Systems - Final Project
-        **Group 15:** Nithin Palyam, Lorenzo LaPlace | **Date:** Fall 2025
-        
-        ### Model Performance & Fairness
-        - **Test Accuracy:** 84.45% (Target: >80%)
-        - **Model:** RoBERTa-base (125M parameters)
-        - **Categories:** 24 job types
-        - **Training Samples:** 2,484 resumes
-        - **Bias Detection:** Comprehensive fairness analysis integrated
+        **Group 15:** Nithin Palyam, Lorenzo LaPlace  
+        **Compare Baseline vs Debiased Models with Comprehensive Bias Analysis**
         """)
         
-        with gr.Tab("Resume Classification"):
+        with gr.Tab("🚀 Resume Classification"):
             with gr.Row():
                 with gr.Column(scale=2):
+                    model_selector = gr.Radio(
+                        choices=["baseline", "debiased"],
+                        label="Select Model",
+                        value="baseline",
+                        info="Choose between baseline and debiased models"
+                    )
+                    
                     input_text = gr.Textbox(
                         label="Resume Text Input",
                         placeholder="Paste resume content here (minimum 50 characters)...",
@@ -264,53 +335,128 @@ def create_enhanced_interface():
                             value=0.0,
                             precision=3
                         )
+                    
+                    demographics_output = gr.JSON(
+                        label="Inferred Demographics",
+                        value={}
+                    )
         
-        with gr.Tab("Bias Analysis"):
+        with gr.Tab("📊 Model Comparison"):
             gr.Markdown("""
-            ## Comprehensive Bias Analysis
+            ## Baseline vs Debiased Model Comparison
             
-            This section shows the results of our comprehensive bias detection framework,
-            including demographic parity, equal opportunity, and name-based bias analysis.
+            This section shows the comprehensive comparison between the baseline model 
+            (trained on original data) and the debiased model (trained with bias mitigation strategies).
             """)
             
-            bias_report = gr.Markdown(
-                label="Bias Analysis Report",
-                value=classifier.get_bias_report_summary()
+            comparison_report = gr.Markdown(
+                label="Model Comparison Report",
+                value=classifier.get_comparison_report()
             )
             
-            refresh_btn = gr.Button("Refresh Bias Report", variant="secondary")
-            
-            # Display bias visualizations if they exist
-            if os.path.exists('visualizations/fairness_metrics.png'):
-                gr.Markdown("### Fairness Metrics Visualization")
-                gr.Image('visualizations/fairness_metrics.png', label="Fairness Metrics")
-            
-            if os.path.exists('visualizations/category_bias.png'):
-                gr.Markdown("### Category-Level Bias Analysis")
-                gr.Image('visualizations/category_bias.png', label="Category Bias")
+            # Display comparison visualizations if they exist
+            with gr.Row():
+                if os.path.exists('visualizations/fairness_comparison.png'):
+                    gr.Image('visualizations/fairness_comparison.png', 
+                           label="Fairness Metrics Comparison")
+                
+                if os.path.exists('visualizations/performance_bias_comparison.png'):
+                    gr.Image('visualizations/performance_bias_comparison.png', 
+                           label="Performance & Bias Comparison")
         
-        with gr.Tab("Project Information"):
+        with gr.Tab("🔍 Bias Analysis"):
             gr.Markdown("""
-            ### Final Project Enhancements
+            ## Detailed Bias Analysis by Model
             
-            **Bias Detection Framework:**
-            - Demographic inference from resume text
-            - Comprehensive fairness metrics calculation
-            - Name substitution experiments
+            Compare the bias characteristics of each model side by side.
+            """)
+            
+            with gr.Row():
+                with gr.Column():
+                    baseline_bias_report = gr.Markdown(
+                        label="Baseline Model Bias Analysis",
+                        value=classifier.get_bias_report('baseline')
+                    )
+                
+                with gr.Column():
+                    debiased_bias_report = gr.Markdown(
+                        label="Debiased Model Bias Analysis", 
+                        value=classifier.get_bias_report('debiased')
+                    )
+        
+        with gr.Tab("📈 Performance Metrics"):
+            gr.Markdown("""
+            ## Performance Metrics Dashboard
+            
+            Detailed performance metrics for both models across different categories.
+            """)
+            
+            # Performance metrics display
+            perf_data = []
+            for model_type in ['baseline', 'debiased']:
+                perf = classifier.performance_results[model_type]
+                perf_data.append([
+                    model_type.title(),
+                    f"{perf['eval_accuracy']*100:.2f}%",
+                    f"{perf['eval_f1']:.3f}",
+                    f"{perf['eval_precision']:.3f}",
+                    f"{perf['eval_recall']:.3f}"
+                ])
+            
+            performance_df = gr.DataFrame(
+                value=perf_data,
+                headers=["Model", "Accuracy", "F1 Score", "Precision", "Recall"],
+                label="Performance Metrics Comparison"
+            )
+            
+            # Category-wise performance
+            gr.Markdown("### Category-wise Performance (Top 10)")
+            category_data = []
+            baseline_perf = classifier.performance_results['baseline']['per_class_accuracy']
+            debiased_perf = classifier.performance_results['debiased']['per_class_accuracy']
+            
+            # Get common categories and sort by baseline performance
+            common_categories = set(baseline_perf.keys()) & set(debiased_perf.keys())
+            sorted_categories = sorted(common_categories, 
+                                     key=lambda x: baseline_perf[x], 
+                                     reverse=True)[:10]
+            
+            for category in sorted_categories:
+                baseline_acc = baseline_perf.get(category, 0)
+                debiased_acc = debiased_perf.get(category, 0)
+                category_data.append([
+                    category,
+                    f"{baseline_acc*100:.1f}%",
+                    f"{debiased_acc*100:.1f}%",
+                    f"{(debiased_acc - baseline_acc)*100:+.1f}%"
+                ])
+            
+            category_df = gr.DataFrame(
+                value=category_data,
+                headers=["Category", "Baseline", "Debiased", "Change"],
+                label="Top 10 Categories Performance Comparison"
+            )
+        
+        with gr.Tab("📋 Project Information"):
+            gr.Markdown("""
+            ### Final Project: Comprehensive Bias Mitigation in Resume Classification
+            
+            **Methodology:**
+            - **Baseline Model**: Trained on original resume dataset
+            - **Debiased Model**: Trained with comprehensive bias mitigation strategies
+            - **Comparison**: Detailed analysis of performance vs fairness trade-offs
+            
+            **Bias Mitigation Strategies Applied:**
+            - Pre-processing: Demographic indicator removal and dataset balancing
+            - Enhanced training with fairness-aware techniques
+            
+            **Key Metrics Tracked:**
+            - Classification accuracy across 24 job categories
+            - Demographic parity and equal opportunity metrics
+            - Name-based bias through substitution experiments
             - Category-level bias analysis
             
-            **Fairness Metrics:**
-            - Demographic Parity Difference
-            - Equal Opportunity Difference  
-            - Accuracy Equality Difference
-            
-            **Technical Implementation:**
-            - Modular architecture for easy extension
-            - Integration with existing classification pipeline
-            - Professional visualizations and reporting
-            - Gradio interface with real-time bias awareness
-            
-            ### Available Job Categories
+            **Available Job Categories:**
             ACCOUNTANT, ADVOCATE, AGRICULTURE, APPAREL, ARTS, AUTOMOBILE, AVIATION,
             BANKING, BPO, BUSINESS-DEVELOPMENT, CHEF, CONSTRUCTION, CONSULTANT,
             DESIGNER, DIGITAL-MEDIA, ENGINEERING, FINANCE, FITNESS, HEALTHCARE,
@@ -320,25 +466,24 @@ def create_enhanced_interface():
         # Connect buttons
         submit_btn.click(
             fn=classifier.predict,
-            inputs=input_text,
-            outputs=[output_text, output_table, confidence_score, bias_score]
+            inputs=[input_text, model_selector],
+            outputs=[output_text, output_table, confidence_score, bias_score, demographics_output]
         )
         
         clear_btn.click(
-            fn=lambda: ["", None, 0.0, 0.0],
-            outputs=[input_text, output_table, confidence_score, bias_score]
-        )
-        
-        refresh_btn.click(
-            fn=classifier.get_bias_report_summary,
-            outputs=bias_report
+            fn=lambda: ["", None, 0.0, 0.0, {}],
+            outputs=[input_text, output_table, confidence_score, bias_score, demographics_output]
         )
     
     return demo
 
 
 if __name__ == "__main__":
-    print("Launching Enhanced Gradio Interface with Bias Analysis...")
-    demo = create_enhanced_interface()
+    print("Launching Dual Model Gradio Interface...")
+    demo = create_dual_model_interface()
     if demo:
-        demo.launch(share=True)
+        demo.launch(
+            share=True,
+            server_name="0.0.0.0",
+            server_port=7860
+        )
