@@ -140,11 +140,18 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
         true_labels, pred_labels, average='weighted', zero_division=0
     )
     
+    # Fix: Handle both string and integer keys in label_map
+    try:
+        target_names = [label_map[i] for i in range(len(label_map))]
+    except KeyError:
+        # If label_map uses string keys, try to convert
+        target_names = [label_map[str(i)] for i in range(len(label_map))]
+    
     # Detailed classification report
     class_report = classification_report(
         true_labels, 
         pred_labels, 
-        target_names=[label_map[str(i)] for i in range(len(label_map))],
+        target_names=target_names,
         output_dict=True,
         zero_division=0
     )
@@ -165,9 +172,12 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
         mask = true_labels == i
         if np.sum(mask) > 0:
             cat_accuracy = np.mean(pred_labels[mask] == true_labels[mask])
-            category_name = label_map[str(i)]
-            category_accuracies[category_name] = cat_accuracy
-            category_support[category_name] = np.sum(mask)
+            try:
+                category_name = label_map[i]
+            except KeyError:
+                category_name = label_map[str(i)]
+            category_accuracies[category_name] = float(cat_accuracy)  # Convert to float for JSON
+            category_support[category_name] = int(np.sum(mask))  # Convert to int for JSON
     
     # Sort by accuracy and show all categories
     sorted_categories = sorted(category_accuracies.items(), key=lambda x: x[1], reverse=True)
@@ -184,19 +194,26 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
         for cat, acc in problem_categories:
             print(f"  {cat:25s}: {acc:.4f}")
     
-    # Save enhanced results
+    # Save enhanced results - Convert all numpy types to native Python types
     if save_report:
         results = {
-            'eval_accuracy': accuracy,
-            'eval_f1': f1,
-            'eval_precision': precision,
-            'eval_recall': recall,
+            'eval_accuracy': float(accuracy),
+            'eval_f1': float(f1),
+            'eval_precision': float(precision),
+            'eval_recall': float(recall),
             'per_class_accuracy': category_accuracies,
             'per_class_support': category_support,
             'classification_report': class_report,
-            'predictions': pred_labels.tolist(),
-            'true_labels': true_labels.tolist()
+            'predictions': [int(x) for x in pred_labels.tolist()],  # Convert to native int
+            'true_labels': [int(x) for x in true_labels.tolist()]   # Convert to native int
         }
+        
+        # Convert numpy types in classification_report
+        for key, value in results['classification_report'].items():
+            if isinstance(value, dict):
+                for subkey, subvalue in value.items():
+                    if hasattr(subvalue, 'item'):  # Check if it's a numpy type
+                        results['classification_report'][key][subkey] = subvalue.item()
         
         os.makedirs('results', exist_ok=True)
         with open('results/enhanced_training_results.json', 'w') as f:
