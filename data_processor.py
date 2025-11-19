@@ -1,5 +1,5 @@
 """
-Data loading and preprocessing module
+Enhanced Data Processing for Resume Classification
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
@@ -8,102 +8,130 @@ import re
 import os
 import pandas as pd
 import numpy as np
-import gdown
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-import json
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+import string
 
+# Download required NLTK data
+try:
+    nltk.download('punkt')
+    nltk.download('stopwords')
+except:
+    pass
 
-class ResumePreprocessor:
-    """Advanced text preprocessing pipeline for resumes"""
+class EnhancedResumePreprocessor:
+    """Advanced text preprocessing with semantic preservation"""
     
     def __init__(self):
         self.url_pattern = re.compile(r'http[s]?://\S+')
         self.email_pattern = re.compile(r'\S+@\S+')
         self.phone_pattern = re.compile(r'[\+\(]?[1-9][0-9 .\-\(\)]{8,}[0-9]')
-        self.special_chars = re.compile(r'[^a-zA-Z0-9\s\.,;:!?\-]')
         
-        # Domain-specific stop words that don't carry semantic meaning
-        self.resume_stop_words = {
-            'objective', 'summary', 'experience', 'education', 'skills', 
-            'projects', 'certifications', 'references', 'work', 'history',
-            'phone', 'email', 'linkedin', 'github', 'http', 'https', 'www'
+        # Enhanced technical skills dictionary
+        self.technical_skills = {
+            'programming': ['python', 'java', 'javascript', 'c++', 'c#', 'ruby', 'go', 'rust', 'swift', 'kotlin'],
+            'web': ['html', 'css', 'react', 'angular', 'vue', 'django', 'flask', 'node', 'express', 'spring'],
+            'databases': ['mysql', 'postgresql', 'mongodb', 'redis', 'sqlite', 'oracle', 'cassandra'],
+            'cloud': ['aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform', 'jenkins', 'ci/cd'],
+            'ml': ['machine learning', 'deep learning', 'tensorflow', 'pytorch', 'scikit-learn', 'keras', 'nlp', 'computer vision'],
+            'tools': ['git', 'jira', 'confluence', 'slack', 'vscode', 'pycharm', 'eclipse']
         }
+        
+        # Resume-specific important terms (DO NOT remove these)
+        self.important_terms = {
+            'experience', 'education', 'skills', 'projects', 'certifications',
+            'bachelor', 'master', 'phd', 'degree', 'university', 'college',
+            'engineer', 'developer', 'analyst', 'manager', 'director', 'specialist',
+            'software', 'data', 'business', 'financial', 'marketing', 'sales'
+        }
+        
+        self.stop_words = set(stopwords.words('english')) - self.important_terms
     
     def clean_text(self, text):
-        """Comprehensive text cleaning and normalization"""
-        if not isinstance(text, str):
+        """Enhanced text cleaning that preserves semantic meaning"""
+        if not isinstance(text, str) or len(text.strip()) == 0:
             return ""
         
-        # Convert to lowercase
-        text = text.lower()
-        
         # Remove URLs, emails, phone numbers
-        text = self.url_pattern.sub(' ', text)
-        text = self.email_pattern.sub(' ', text)
-        text = self.phone_pattern.sub(' ', text)
+        text = self.url_pattern.sub(' [URL] ', text)
+        text = self.email_pattern.sub(' [EMAIL] ', text)
+        text = self.phone_pattern.sub(' [PHONE] ', text)
         
-        # Remove special characters but keep basic punctuation
-        text = self.special_chars.sub(' ', text)
-        
-        # Remove extra whitespace
-        text = ' '.join(text.split())
-        
-        # Remove resume-specific stop words
+        # Preserve case for important terms, lowercase the rest
         words = text.split()
-        filtered_words = [word for word in words if word not in self.resume_stop_words]
-        text = ' '.join(filtered_words)
+        cleaned_words = []
         
-        # Enhanced length normalization - keep most informative sections
-        words = text.split()
-        if len(words) > 1000:
-            # Keep first 700 words (experience/skills) and last 300 (education/summary)
-            text = ' '.join(words[:700] + words[-300:])
-        elif len(words) > 600:
-            text = ' '.join(words[:400] + words[-200:])
+        for word in words:
+            # Keep important terms in original case
+            if word.lower() in self.important_terms:
+                cleaned_words.append(word)
+            else:
+                # Clean and lowercase other words
+                cleaned_word = re.sub(r'[^a-zA-Z0-9\s]', '', word.lower())
+                if cleaned_word and len(cleaned_word) > 1 and cleaned_word not in self.stop_words:
+                    cleaned_words.append(cleaned_word)
         
-        return text.strip()
+        # Smart length normalization - preserve key sections
+        if len(cleaned_words) > 800:
+            # Keep first 500 words (usually experience/skills) and last 300 (education/summary)
+            cleaned_words = cleaned_words[:500] + cleaned_words[-300:]
+        
+        return ' '.join(cleaned_words)
     
-    def extract_technical_skills(self, text):
-        """Extract technical skills to enhance feature representation"""
-        technical_keywords = {
-            'python', 'java', 'javascript', 'react', 'node', 'sql', 'aws', 
-            'docker', 'kubernetes', 'machine learning', 'deep learning',
-            'tensorflow', 'pytorch', 'scikit', 'django', 'flask', 'fastapi',
-            'mongodb', 'postgresql', 'mysql', 'git', 'jenkins', 'ci/cd',
-            'azure', 'gcp', 'linux', 'rest', 'api', 'microservices'
+    def extract_enhanced_features(self, text):
+        """Extract structured features from resume text"""
+        features = {}
+        text_lower = text.lower()
+        
+        # Extract technical skills with categories
+        for category, skills in self.technical_skills.items():
+            found_skills = [skill for skill in skills if skill in text_lower]
+            if found_skills:
+                features[f'{category}_skills'] = ' '.join(found_skills)
+        
+        # Extract education level
+        education_indicators = {
+            'phd': ['phd', 'doctorate', 'doctoral'],
+            'masters': ['master', 'ms', 'm.s.', 'mba', 'm.sc'],
+            'bachelor': ['bachelor', 'bs', 'b.s.', 'ba', 'b.a', 'undergraduate'],
+            'associate': ['associate', 'a.a', 'a.s']
         }
         
-        found_skills = [skill for skill in technical_keywords if skill in text.lower()]
-        return ' '.join(found_skills)
-
-
-def download_dataset():
-    """Download dataset from Google Drive if not exists"""
-    os.makedirs('data/raw', exist_ok=True)
+        for level, indicators in education_indicators.items():
+            if any(indicator in text_lower for indicator in indicators):
+                features['education_level'] = level
+                break
+        
+        # Extract experience indicators
+        experience_pattern = r'(\d+)\+?\s*years?'
+        experience_matches = re.findall(experience_pattern, text)
+        if experience_matches:
+            features['experience_years'] = max(map(int, experience_matches))
+        
+        return features
     
-    if not os.path.exists('data/raw/Resume.csv'):
-        print("Downloading dataset from Google Drive...")
-        try:
-            gdown.download(
-                'https://drive.google.com/uc?id=1QWJo26V-95XF1uGJKKVnnf96uaclAENk',
-                'data/raw/Resume.csv', 
-                quiet=False
-            )
-            print("Dataset downloaded successfully!")
-            return True
-        except Exception as e:
-            print(f"Download failed: {e}")
-            return False
-    else:
-        print("Dataset already exists!")
-        return True
+    def enhance_resume_text(self, text):
+        """Combine cleaned text with extracted features"""
+        cleaned_text = self.clean_text(text)
+        features = self.extract_enhanced_features(text)
+        
+        # Append features to text
+        enhanced_text = cleaned_text
+        for feature_value in features.values():
+            if isinstance(feature_value, str):
+                enhanced_text += ' ' + feature_value
+            else:
+                enhanced_text += ' ' + str(feature_value)
+        
+        return enhanced_text.strip()
 
-
-def load_and_preprocess_data(data_path):
-    """Load and preprocess the resume dataset with enhanced cleaning"""
+def load_and_enhance_data(data_path):
+    """Load and preprocess data with enhanced features"""
     print("=" * 60)
-    print("DATA PROCESSING")
+    print("ENHANCED DATA PROCESSING")
     print("=" * 60)
     
     try:
@@ -117,23 +145,21 @@ def load_and_preprocess_data(data_path):
         
         # Clean data
         df = df.dropna(subset=[resume_col, 'Category'])
-        preprocessor = ResumePreprocessor()
+        preprocessor = EnhancedResumePreprocessor()
         
-        # Enhanced cleaning with skill extraction
+        # Enhanced preprocessing
+        print("Applying enhanced text preprocessing...")
         df['cleaned_text'] = df[resume_col].apply(preprocessor.clean_text)
-        df['technical_skills'] = df[resume_col].apply(preprocessor.extract_technical_skills)
-        
-        # Combine cleaned text with technical skills for better representation
-        df['enhanced_text'] = df['cleaned_text'] + ' ' + df['technical_skills']
+        df['enhanced_text'] = df[resume_col].apply(preprocessor.enhance_resume_text)
         
         # Filter out very short resumes
         initial_count = len(df)
-        df = df[df['cleaned_text'].str.len() > 100]  # Increased minimum length
+        df = df[df['cleaned_text'].str.len() > 150]  # Increased minimum length
         filtered_count = initial_count - len(df)
         
         if filtered_count > 0:
             print(f"Filtered {filtered_count} resumes with insufficient text")
-        print(f"Cleaned {len(df)} resumes")
+        print(f"Enhanced {len(df)} resumes")
         
         # Encode labels
         label_encoder = LabelEncoder()
@@ -141,49 +167,74 @@ def load_and_preprocess_data(data_path):
         label_map = {i: cat for i, cat in enumerate(label_encoder.classes_)}
         num_labels = len(label_map)
         
-        # Analyze class distribution
-        print(f"\nClass Distribution:")
+        # Enhanced class distribution analysis
+        print(f"\nEnhanced Class Distribution:")
         category_counts = df['Category'].value_counts()
         for category, count in category_counts.items():
-            print(f"  {category:25s}: {count:3d} samples")
+            percentage = (count / len(df)) * 100
+            print(f"  {category:25s}: {count:3d} samples ({percentage:.1f}%)")
         
         # Identify imbalanced classes
         min_samples = category_counts.min()
         max_samples = category_counts.max()
-        print(f"\nClass imbalance: {min_samples} to {max_samples} (ratio: {max_samples/min_samples:.1f}x)")
+        imbalance_ratio = max_samples / min_samples if min_samples > 0 else float('inf')
+        print(f"\nClass imbalance: {min_samples} to {max_samples} (ratio: {imbalance_ratio:.1f}x)")
+        
+        # Analyze text length distribution
+        text_lengths = df['enhanced_text'].str.len()
+        print(f"\nText Length Statistics:")
+        print(f"  Average length: {text_lengths.mean():.0f} characters")
+        print(f"  Min length: {text_lengths.min()} characters")
+        print(f"  Max length: {text_lengths.max()} characters")
         
         return df, label_map, num_labels
         
     except Exception as e:
         print(f"Error processing data: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None, None
 
-
-def split_data(df, test_size=0.15, val_size=0.15, random_state=42):
-    """Split data into train, validation, and test sets with stratification"""
-    texts = df['enhanced_text'].tolist()  # Use enhanced text
+def create_balanced_split(df, test_size=0.15, val_size=0.15, random_state=42):
+    """Create balanced splits addressing class imbalance"""
+    texts = df['enhanced_text'].tolist()
     labels = df['label'].tolist()
+    categories = df['Category'].tolist()
     
-    # Split: 70% train, 15% val, 15% test
-    X_temp, X_test, y_temp, y_test = train_test_split(
-        texts, labels, 
+    # Use stratification to maintain class distribution
+    X_temp, X_test, y_temp, y_test, cat_temp, cat_test = train_test_split(
+        texts, labels, categories, 
         test_size=test_size,
         random_state=random_state, 
-        stratify=labels
+        stratify=categories
     )
     
-    # Adjust validation split to get exactly 15% of total
+    # Adjust validation split
     val_ratio = val_size / (1 - test_size)
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_temp, y_temp, 
+    X_train, X_val, y_train, y_val, cat_train, cat_val = train_test_split(
+        X_temp, y_temp, cat_temp,
         test_size=val_ratio,
         random_state=random_state, 
-        stratify=y_temp
+        stratify=cat_temp
     )
     
-    print(f"\nData Split Complete:")
+    print(f"\nEnhanced Data Split Complete:")
     print(f"  Train: {len(X_train)} samples ({len(X_train)/len(texts)*100:.1f}%)")
     print(f"  Val:   {len(X_val)} samples ({len(X_val)/len(texts)*100:.1f}%)")
     print(f"  Test:  {len(X_test)} samples ({len(X_test)/len(texts)*100:.1f}%)")
+    
+    # Verify class distribution in splits
+    def get_class_distribution(labels, label_map):
+        distribution = {}
+        total = len(labels)
+        for label in set(labels):
+            count = sum(1 for l in labels if l == label)
+            distribution[label_map[label]] = f"{count} ({count/total*100:.1f}%)"
+        return distribution
+    
+    print(f"\nClass Distribution in Splits:")
+    print(f"  Train: {get_class_distribution(y_train, label_map)}")
+    print(f"  Val:   {get_class_distribution(y_val, label_map)}")
+    print(f"  Test:  {get_class_distribution(y_test, label_map)}")
     
     return X_train, X_val, X_test, y_train, y_val, y_test
