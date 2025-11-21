@@ -11,6 +11,8 @@ import numpy as np
 import gdown
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.feature_extraction.text import TfidfVectorizer
+from imblearn.over_sampling import SMOTE
 import json
 from collections import Counter
 
@@ -48,10 +50,6 @@ class ResumePreprocessor:
         
         # Remove extra whitespace
         text = ' '.join(text.split())
-        
-        # Enhanced length normalization - keep most informative sections
-        # Instead of arbitrary truncation, we'll use the full context up to max length
-        # The tokenizer will handle truncation properly
         
         return text.strip()
     
@@ -116,6 +114,43 @@ def download_dataset():
         return True
 
 
+def enhanced_balance_dataset(df, target_col='Category'):
+    """Enhanced dataset balancing with SMOTE-like techniques"""
+    print("Applying enhanced dataset balancing...")
+    
+    # Vectorize text for balancing
+    vectorizer = TfidfVectorizer(max_features=500, stop_words='english')
+    X = vectorizer.fit_transform(df['enhanced_text'])
+    y = df['label']
+    
+    # Apply SMOTE for minority classes
+    smote = SMOTE(random_state=42, k_neighbors=2)
+    X_balanced, y_balanced = smote.fit_resample(X, y)
+    
+    # Create balanced dataframe by duplicating samples
+    balanced_indices = []
+    label_counts = Counter(y_balanced)
+    
+    for label in np.unique(y_balanced):
+        label_indices = df[df['label'] == label].index.tolist()
+        needed_count = label_counts[label]
+        
+        if len(label_indices) < needed_count:
+            # Need to duplicate some samples
+            duplicates_needed = needed_count - len(label_indices)
+            duplicated = np.random.choice(label_indices, duplicates_needed, replace=True)
+            balanced_indices.extend(label_indices)
+            balanced_indices.extend(duplicated.tolist())
+        else:
+            balanced_indices.extend(label_indices[:needed_count])
+    
+    balanced_df = df.iloc[balanced_indices].copy()
+    balanced_df.reset_index(drop=True, inplace=True)
+    
+    print(f"Dataset balanced: {len(df)} -> {len(balanced_df)} samples")
+    return balanced_df
+
+
 def analyze_class_distribution(df, category_col='Category'):
     """Comprehensive analysis of class distribution"""
     category_counts = df[category_col].value_counts()
@@ -134,6 +169,28 @@ def analyze_class_distribution(df, category_col='Category'):
         print(f"\nWARNING: {len(problem_classes)} classes have < 10 samples:")
         for cls, count in problem_classes.items():
             print(f"  {cls}: {count} samples")
+
+
+def analyze_and_fix_class_imbalance(df, category_col='Category'):
+    """Comprehensive class imbalance analysis and fixing"""
+    category_counts = df[category_col].value_counts()
+    
+    print("\n" + "=" * 60)
+    print("ENHANCED CLASS IMBALANCE ANALYSIS & FIXING")
+    print("=" * 60)
+    
+    problem_classes = category_counts[category_counts < 10]
+    if len(problem_classes) > 0:
+        print(f"CRITICAL: {len(problem_classes)} classes have < 10 samples:")
+        for cls, count in problem_classes.items():
+            print(f"  {cls}: {count} samples")
+        
+        # Apply enhanced balancing
+        df_balanced = enhanced_balance_dataset(df)
+        return df_balanced
+    else:
+        print("No critical class imbalance detected")
+        return df
 
 
 def load_and_preprocess_data(data_path):
@@ -172,8 +229,8 @@ def load_and_preprocess_data(data_path):
             print(f"Filtered {filtered_count} resumes with insufficient text")
         print(f"Final dataset: {len(df)} resumes")
         
-        # Analyze class distribution
-        analyze_class_distribution(df)
+        # Analyze and fix class imbalance
+        df = analyze_and_fix_class_imbalance(df)
         
         # Encode labels
         label_encoder = LabelEncoder()
@@ -181,9 +238,9 @@ def load_and_preprocess_data(data_path):
         label_map = {i: cat for i, cat in enumerate(label_encoder.classes_)}
         num_labels = len(label_map)
         
-        print(f"\nClass Distribution:")
+        print(f"\nEnhanced Class Distribution:")
         category_counts = df['Category'].value_counts()
-        for category, count in category_counts.items():
+        for category, count in category_counts.head(10).items():  # Show top 10
             print(f"  {category:25s}: {count:3d} samples")
         
         return df, label_map, num_labels
