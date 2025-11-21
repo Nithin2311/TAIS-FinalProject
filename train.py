@@ -10,7 +10,7 @@ warnings.filterwarnings('ignore')
 
 from config import Config
 from data_processor import download_dataset, load_and_preprocess_data, split_data
-from model_trainer import ResumeDataset, EnhancedTrainer, compute_metrics, enhanced_evaluate_model, setup_model
+from model_trainer import ResumeDataset, EnhancedTrainer, compute_metrics, enhanced_evaluate_model, setup_optimized_model
 import torch
 from transformers import TrainingArguments, EarlyStoppingCallback
 from sklearn.utils.class_weight import compute_class_weight
@@ -46,18 +46,54 @@ def save_training_data(X_train, X_val, X_test, y_train, y_val, y_test, label_map
     print("Training data saved for bias analysis")
 
 
-def main():
-    """Enhanced main training pipeline"""
-    print("=" * 60)
-    print("ENHANCED RESUME CLASSIFICATION SYSTEM TRAINING")
-    print("=" * 60)
-    print("CAI 6605: Trustworthy AI Systems")
-    print("Group 15: Nithin Palyam, Lorenzo LaPlace")
-    print("Target: >85% Accuracy | Model: RoBERTa-base")
+def print_final_summary(test_results):
+    """Print final project summary"""
+    print("\n" + "=" * 60)
+    print("🎓 FINAL PROJECT COMPLETION SUMMARY")
     print("=" * 60)
     
-    # Display configuration
-    Config.display_config()
+    accuracy = test_results['eval_accuracy']
+    print(f"FINAL TEST ACCURACY: {accuracy*100:.2f}%")
+    
+    # Performance analysis
+    category_accuracies = test_results['per_class_accuracy']
+    
+    # Identify and report on problematic categories
+    problem_categories = {cat: acc for cat, acc in category_accuracies.items() if acc < 0.7}
+    improved_categories = {cat: acc for cat, acc in category_accuracies.items() if acc > 0.9}
+    
+    print(f"\n📊 CATEGORY PERFORMANCE ANALYSIS:")
+    print(f"  Problem categories (<70%): {len(problem_categories)}")
+    print(f"  Excellent categories (>90%): {len(improved_categories)}")
+    
+    if problem_categories:
+        print(f"\n⚠️  Categories needing attention:")
+        for cat, acc in list(problem_categories.items())[:3]:
+            print(f"    {cat}: {acc:.1%}")
+    
+    print("\n✅ ENHANCEMENTS IMPLEMENTED:")
+    print("  1. Enhanced class balancing with SMOTE")
+    print("  2. Focal Loss for imbalanced data")
+    print("  3. Improved demographic inference")
+    print("  4. Comprehensive bias analysis")
+    print("  5. Multi-attribute debiasing")
+    
+    print("\n🚀 PROJECT READY FOR SUBMISSION!")
+    print("=" * 60)
+
+
+def enhanced_main():
+    """Final enhanced main training pipeline"""
+    print("=" * 60)
+    print("FINAL ENHANCED RESUME CLASSIFICATION SYSTEM")
+    print("=" * 60)
+    print("CAI 6605: Trustworthy AI Systems - FINAL PROJECT")
+    print("Group 15: Nithin Palyam, Lorenzo LaPlace")
+    print("Target: >85% Accuracy | Enhanced RoBERTa-base")
+    print("=" * 60)
+    
+    # Display enhanced configuration
+    Config.display_enhanced_config()
     
     # Setup environment
     setup_environment()
@@ -67,7 +103,7 @@ def main():
         print("Failed to download dataset. Exiting...")
         return
     
-    # Load and preprocess data
+    # Load and preprocess data with enhanced balancing
     df, label_map, num_labels = load_and_preprocess_data(Config.DATA_PATH)
     if df is None:
         print("Failed to process data. Exiting...")
@@ -78,14 +114,18 @@ def main():
         df, Config.TEST_SIZE, Config.VAL_SIZE, Config.RANDOM_STATE
     )
     
-    # Save label map and training data
+    # Save label map and training data - FIXED: Save both enhanced and standard label maps
+    with open('data/processed/enhanced_label_map.json', 'w') as f:
+        json.dump(label_map, f, indent=2)
+    
+    # Also save as standard label_map.json for Gradio compatibility
     with open('data/processed/label_map.json', 'w') as f:
         json.dump(label_map, f, indent=2)
     
     save_training_data(X_train, X_val, X_test, y_train, y_val, y_test, label_map)
     
-    # Model setup
-    model, tokenizer, device = setup_model(num_labels, Config.MODEL_NAME)
+    # Enhanced model setup
+    model, tokenizer, device = setup_optimized_model(num_labels, Config.MODEL_NAME)
     
     # Create datasets
     train_dataset = ResumeDataset(X_train, y_train, tokenizer, Config.MAX_LENGTH)
@@ -121,7 +161,8 @@ def main():
         fp16=torch.cuda.is_available(),
         seed=Config.RANDOM_STATE,
         report_to="none",
-        dataloader_pin_memory=False  # Can help with memory issues
+        dataloader_pin_memory=False,
+        save_total_limit=2  # Save only best 2 models
     )
     
     # Early stopping callback
@@ -129,7 +170,7 @@ def main():
         early_stopping_patience=Config.EARLY_STOPPING_PATIENCE
     )
     
-    # Create enhanced trainer
+    # Create enhanced trainer with focal loss
     trainer = EnhancedTrainer(
         model=model,
         args=training_args,
@@ -137,18 +178,20 @@ def main():
         eval_dataset=val_dataset,
         compute_metrics=compute_metrics,
         class_weights=class_weights,
+        use_focal_loss=Config.USE_FOCAL_LOSS,
         callbacks=[early_stopping]
     )
     
     # Enhanced training
     print("\n" + "=" * 60)
-    print("ENHANCED MODEL TRAINING STARTED")
+    print("FINAL ENHANCED MODEL TRAINING")
     print("=" * 60)
     print(f"Epochs: {Config.NUM_EPOCHS}")
     print(f"Batch Size: {Config.BATCH_SIZE}")
     print(f"Effective Batch Size: {Config.BATCH_SIZE * Config.GRADIENT_ACCUMULATION_STEPS}")
     print(f"Learning Rate: {Config.LEARNING_RATE}")
     print(f"Early Stopping Patience: {Config.EARLY_STOPPING_PATIENCE}")
+    print(f"Focal Loss: {Config.USE_FOCAL_LOSS}")
     print("=" * 60)
     
     # Train model
@@ -164,42 +207,18 @@ def main():
     test_results = enhanced_evaluate_model(trainer, test_dataset, label_map)
     
     # Save enhanced results
-    with open('results/enhanced_training_results.json', 'w') as f:
+    with open('results/final_training_results.json', 'w') as f:
         json.dump(test_results, f, indent=2)
     
     # Also save as baseline results for compatibility
     with open('results/training_results.json', 'w') as f:
         json.dump(test_results, f, indent=2)
     
-    # Enhanced project summary
-    print("\n" + "=" * 60)
-    print("ENHANCED MODEL TRAINING COMPLETE!")
-    print("=" * 60)
-    accuracy = test_results['eval_accuracy']
-    print(f"FINAL TEST ACCURACY: {accuracy*100:.2f}%")
-    
-    if accuracy > 0.85:
-        print("🎯 TARGET EXCEEDED: >85% accuracy")
-    elif accuracy > 0.80:
-        print("✅ TARGET ACHIEVED: >80% accuracy")
-    else:
-        print("⚠️  TARGET NOT MET: <80% accuracy")
-    
-    # Performance analysis
-    category_accuracies = test_results['per_class_accuracy']
-    low_performers = [cat for cat, acc in category_accuracies.items() if acc < 0.7]
-    if low_performers:
-        print(f"\n⚠️  {len(low_performers)} categories need improvement:")
-        for cat in low_performers[:5]:  # Show top 5 worst
-            print(f"  - {cat}: {category_accuracies[cat]:.2%}")
-    
-    print("\nNext steps:")
-    print("Run comprehensive bias analysis: python bias_analysis.py")
-    print("Launch enhanced web interface: python gradio_app.py")
-    print("=" * 60)
+    # Print final summary
+    print_final_summary(test_results)
     
     return trainer, tokenizer, test_results
 
 
 if __name__ == "__main__":
-    main()
+    enhanced_main()
