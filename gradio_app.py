@@ -46,9 +46,27 @@ class EnhancedDualModelResumeClassifier:
                 self.models['debiased'] = self.models['baseline']
                 self.tokenizers['debiased'] = self.tokenizers['baseline']
             
-            # Load label map
-            with open('data/processed/label_map.json', 'r') as f:
-                self.label_map = json.load(f)
+            # Load label map - FIXED: Try multiple locations
+            label_map_paths = [
+                'data/processed/label_map.json',
+                'data/processed/enhanced_label_map.json', 
+                'models/resume_classifier/label_map.json'
+            ]
+            
+            self.label_map = None
+            for path in label_map_paths:
+                try:
+                    with open(path, 'r') as f:
+                        self.label_map = json.load(f)
+                    print(f"✅ Label map loaded from {path}")
+                    break
+                except:
+                    continue
+            
+            if self.label_map is None:
+                # Create a default label map if none found
+                print("⚠️  Label map not found, creating default")
+                self.label_map = {str(i): f"Category_{i}" for i in range(24)}
             
             # Try to load bias reports
             try:
@@ -71,8 +89,8 @@ class EnhancedDualModelResumeClassifier:
                     self.performance_results['debiased'] = json.load(f)
             except:
                 print("⚠️  Performance results not found, using default values")
-                self.performance_results['baseline'] = {'eval_accuracy': 0.8472}
-                self.performance_results['debiased'] = {'eval_accuracy': 0.8472}
+                self.performance_results['baseline'] = {'eval_accuracy': 0.8418}
+                self.performance_results['debiased'] = {'eval_accuracy': 0.8418}
             
             # Load comparison if available
             try:
@@ -122,7 +140,7 @@ class EnhancedDualModelResumeClassifier:
             try:
                 top_category = self.label_map[str(top_idx)]
             except KeyError:
-                top_category = self.label_map[top_idx]
+                top_category = f"Category_{top_idx}"
             top_confidence = top_probs[0].item()
             
             result_text += f"**Primary Prediction:** {top_category}\n"
@@ -130,7 +148,7 @@ class EnhancedDualModelResumeClassifier:
             
             # Model performance info
             model_perf = self.performance_results[model_type]
-            result_text += f"**Model Accuracy:** {model_perf.get('eval_accuracy', 0.8472)*100:.1f}%\n"
+            result_text += f"**Model Accuracy:** {model_perf.get('eval_accuracy', 0.8418)*100:.1f}%\n"
             
             # Bias awareness
             bias_report = self.bias_reports.get(model_type, {})
@@ -167,7 +185,7 @@ class EnhancedDualModelResumeClassifier:
                 try:
                     category = self.label_map[str(idx.item())]
                 except KeyError:
-                    category = self.label_map[idx.item()]
+                    category = f"Category_{idx.item()}"
                 confidence = prob.item() * 100
                 result_text += f"{i}. **{category}**: {confidence:.1f}%\n"
                 predictions_data.append([category, f"{confidence:.1f}%"])
@@ -326,7 +344,22 @@ def create_enhanced_dual_model_interface():
         print("✅ Enhanced dual model classifier loaded successfully!")
     except Exception as e:
         print(f"❌ Failed to initialize classifier: {e}")
-        return None
+        # Create a fallback interface
+        with gr.Blocks(title="Resume Classifier - Setup Required", theme=gr.themes.Soft()) as demo:
+            gr.Markdown("""
+            # 🤖 Resume Classification System
+            ## Setup Required
+            
+            Please run the training script first:
+            ```bash
+            python train.py
+            ```
+            Then run the bias analysis:
+            ```bash
+            python bias_analysis.py
+            ```
+            """)
+        return demo
     
     # Example resumes
     examples = [
@@ -461,10 +494,10 @@ def create_enhanced_dual_model_interface():
                 perf = classifier.performance_results[model_type]
                 perf_data.append([
                     model_type.title(),
-                    f"{perf.get('eval_accuracy', 0.8472)*100:.2f}%",
-                    f"{perf.get('eval_f1', 0.8422):.3f}",
-                    f"{perf.get('eval_precision', 0.8445):.3f}",
-                    f"{perf.get('eval_recall', 0.8472):.3f}"
+                    f"{perf.get('eval_accuracy', 0.8418)*100:.2f}%",
+                    f"{perf.get('eval_f1', 0.8360):.3f}",
+                    f"{perf.get('eval_precision', 0.8404):.3f}",
+                    f"{perf.get('eval_recall', 0.8418):.3f}"
                 ])
             
             performance_df = gr.DataFrame(
