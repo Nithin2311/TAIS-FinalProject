@@ -13,10 +13,11 @@ import numpy as np
 import json
 import pickle
 import pandas as pd
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from model_trainer import ResumeDataset
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, EarlyStoppingCallback
+from model_trainer import ResumeDataset, EnhancedTrainer, compute_metrics, enhanced_evaluate_model, setup_optimized_model
 from bias_analyzer import EnhancedBiasAnalyzer, EnhancedBiasVisualization, EnhancedDemographicInference
 from debiasing_experiments import PreprocessingDebiasing
+from sklearn.utils.class_weight import compute_class_weight
 
 
 def convert_numpy_types(obj):
@@ -198,12 +199,8 @@ def train_enhanced_debiased_model(training_data):
     print(f"Enhanced debiased dataset: {len(balanced_texts)} samples (was {len(X_train)})")
     
     # Train new model on debiased data with enhanced settings
-    from train import setup_model, ResumeDataset, EnhancedTrainer, compute_metrics, enhanced_evaluate_model
-    from transformers import TrainingArguments, EarlyStoppingCallback
-    from sklearn.utils.class_weight import compute_class_weight
-    
     num_labels = len(label_map)
-    model, tokenizer, device = setup_model(num_labels, 'roberta-base')
+    model, tokenizer, device = setup_optimized_model(num_labels, 'roberta-base')
     
     # Create datasets with debiased data
     train_dataset = ResumeDataset(balanced_texts, balanced_labels, tokenizer, 512)
@@ -251,6 +248,7 @@ def train_enhanced_debiased_model(training_data):
         eval_dataset=val_dataset,
         compute_metrics=compute_metrics,
         class_weights=class_weights,
+        use_focal_loss=True,
         callbacks=[early_stopping]
     )
     
