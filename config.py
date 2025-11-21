@@ -38,6 +38,15 @@ class Config:
     USE_FOCAL_LOSS = True
     ENHANCED_BALANCING = True
     
+    # Debiasing Parameters
+    ADVERSARIAL_LAMBDA = 0.05  # Reduced for stability
+    MAX_SAMPLES_PER_GROUP = 80  # Prevent dataset explosion
+    TARGET_AUGMENTATION_CATEGORIES = ['BPO', 'AUTOMOBILE', 'APPAREL', 'DIGITAL-MEDIA']
+    
+    # Explainability
+    LIME_NUM_FEATURES = 8
+    ENABLE_SHAP = False  # Set to True if you want SHAP (memory intensive)
+    
     @staticmethod
     def display_enhanced_config():
         """Display enhanced configuration for final submission"""
@@ -53,4 +62,6 @@ class Config:
         print(f"Enhanced Balancing: {Config.ENHANCED_BALANCING}")
         print(f"Dropout: {Config.DROPOUT_RATE}")
         print(f"Early Stopping: {Config.EARLY_STOPPING_PATIENCE}")
+        print(f"Adversarial Lambda: {Config.ADVERSARIAL_LAMBDA}")
+        print(f"Target Augmentation Categories: {Config.TARGET_AUGMENTATION_CATEGORIES}")
         print("=" * 60)
