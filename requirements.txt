@@ -16,3 +16,6 @@ lime>=0.2.0
 shap>=0.42.0
 plotly>=5.10.0
 imbalanced-learn>=0.10.0
+scipy>=1.7.0
+nltk>=3.7
+wordcloud>=1.8.0
