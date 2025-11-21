@@ -1,5 +1,5 @@
 """
-Bias Mitigation Strategies Implementation
+Enhanced Bias Mitigation Strategies Implementation
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
@@ -15,13 +15,16 @@ import json
 
 
 class PreprocessingDebiasing:
-    """Pre-processing bias mitigation techniques"""
+    """Enhanced pre-processing bias mitigation techniques"""
     
     def __init__(self):
         self.demographic_keywords = {
-            'gender': ['he', 'she', 'him', 'her', 'his', 'hers', 'male', 'female', 'man', 'woman'],
-            'race': ['african', 'asian', 'hispanic', 'caucasian', 'white', 'black', 'ethnicity'],
-            'privilege': ['ivy league', 'legacy', 'first generation', 'low income', 'underserved']
+            'gender': ['he', 'she', 'him', 'her', 'his', 'hers', 'male', 'female', 'man', 'woman',
+                      'mr.', 'mrs.', 'ms.', 'mr', 'mrs', 'ms', 'mister', 'missus'],
+            'race': ['african', 'asian', 'hispanic', 'caucasian', 'white', 'black', 'ethnicity',
+                    'race', 'racial', 'nationality'],
+            'privilege': ['ivy league', 'legacy', 'first generation', 'low income', 'underserved',
+                         'prestigious', 'elite', 'top-tier']
         }
     
     def remove_demographic_indicators(self, text):
@@ -30,16 +33,18 @@ class PreprocessingDebiasing:
         
         # Remove gender indicators
         for keyword in self.demographic_keywords['gender']:
-            cleaned_text = re.sub(r'\b' + keyword + r'\b', '[REDACTED]', cleaned_text)
+            cleaned_text = re.sub(r'\b' + re.escape(keyword) + r'\b', '[REDACTED]', cleaned_text)
         
         # Remove other sensitive indicators
         for keyword in self.demographic_keywords['race'] + self.demographic_keywords['privilege']:
-            cleaned_text = re.sub(r'\b' + keyword + r'\b', '[REDACTED]', cleaned_text)
+            cleaned_text = re.sub(r'\b' + re.escape(keyword) + r'\b', '[REDACTED]', cleaned_text)
         
         return cleaned_text
     
-    def balance_dataset(self, texts, labels, demographics, target_attribute):
-        """Balance dataset across demographic groups"""
+    def balance_dataset(self, texts, labels, demographics, target_attribute, max_samples=2000):
+        """Enhanced dataset balancing across demographic groups with size limits"""
+        print(f"Balancing dataset for {target_attribute}...")
+        
         # Group by demographic attribute and label
         groups = {}
         for i, (text, label, demo) in enumerate(zip(texts, labels, demographics[target_attribute])):
@@ -48,15 +53,21 @@ class PreprocessingDebiasing:
                 groups[key] = []
             groups[key].append(i)
         
-        # Find maximum size per group
-        max_size = max(len(indices) for indices in groups.values())
+        # Find reasonable target size (median of group sizes, but cap it)
+        group_sizes = [len(indices) for indices in groups.values()]
+        target_size = min(int(np.median(group_sizes)), max_samples // len(groups))
         
-        # Resample each group to maximum size
+        print(f"Target size per group: {target_size}")
+        
+        # Resample each group to target size
         balanced_indices = []
-        for indices in groups.values():
-            if len(indices) < max_size:
+        for key, indices in groups.items():
+            if len(indices) < target_size:
                 # Oversample minority groups
-                resampled_indices = resample(indices, replace=True, n_samples=max_size, random_state=42)
+                resampled_indices = resample(indices, replace=True, n_samples=target_size, random_state=42)
+            elif len(indices) > target_size:
+                # Undersample majority groups
+                resampled_indices = resample(indices, replace=False, n_samples=target_size, random_state=42)
             else:
                 resampled_indices = indices
             balanced_indices.extend(resampled_indices)
@@ -64,6 +75,7 @@ class PreprocessingDebiasing:
         balanced_texts = [texts[i] for i in balanced_indices]
         balanced_labels = [labels[i] for i in balanced_indices]
         
+        print(f"Enhanced balancing: {len(texts)} -> {len(balanced_texts)} samples")
         return balanced_texts, balanced_labels
 
 
@@ -166,8 +178,8 @@ class PostprocessingDebiasing:
         return calibrated_predictions
 
 
-class BiasMitigationPipeline:
-    """Orchestrate multiple bias mitigation strategies"""
+class EnhancedBiasMitigationPipeline:
+    """Enhanced bias mitigation with multiple strategies"""
     
     def __init__(self, model, tokenizer, label_map, device):
         self.model = model
@@ -180,14 +192,14 @@ class BiasMitigationPipeline:
     
     def apply_preprocessing_debiasing(self, texts, labels, demographics):
         """Apply pre-processing debiasing techniques"""
-        print("Applying pre-processing debiasing...")
+        print("Applying enhanced preprocessing debiasing...")
         
         # Remove demographic indicators
         debiased_texts = [self.preprocessor.remove_demographic_indicators(text) for text in texts]
         
-        # Balance dataset for gender
+        # Balance dataset for gender with size limits
         balanced_texts, balanced_labels = self.preprocessor.balance_dataset(
-            debiased_texts, labels, demographics, 'gender'
+            debiased_texts, labels, demographics, 'gender', max_samples=2000
         )
         
         return balanced_texts, balanced_labels
@@ -227,7 +239,7 @@ class BiasMitigationPipeline:
     def comprehensive_debiasing(self, train_texts, train_labels, val_texts, val_labels, demographics):
         """Apply comprehensive debiasing pipeline"""
         print("\n" + "=" * 60)
-        print("COMPREHENSIVE BIAS MITIGATION PIPELINE")
+        print("ENHANCED COMPREHENSIVE BIAS MITIGATION PIPELINE")
         print("=" * 60)
         
         # 1. Pre-processing debiasing
