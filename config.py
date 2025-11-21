@@ -1,23 +1,28 @@
 """
-Configuration settings for Resume Classification System
+Enhanced Configuration settings for Resume Classification System
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
 
 class Config:
-    """Optimized configuration for resume classification"""
+    """Optimized configuration for enhanced resume classification"""
     
     # Model Configuration
     MODEL_NAME = 'roberta-base'
     MAX_LENGTH = 512
     
-    # Training Parameters - OPTIMIZED
-    BATCH_SIZE = 8  # Reduced for better stability
-    NUM_EPOCHS = 15  # Reduced to prevent overfitting
-    LEARNING_RATE = 1e-5  # Lower learning rate for fine-tuning
+    # Enhanced Training Parameters
+    BATCH_SIZE = 8
+    NUM_EPOCHS = 12  # Reduced to prevent overfitting
+    LEARNING_RATE = 2e-5  # Slightly higher for better convergence
     WARMUP_RATIO = 0.1
     WEIGHT_DECAY = 0.01
     EARLY_STOPPING_PATIENCE = 3
+    
+    # Enhanced Regularization
+    DROPOUT_RATE = 0.2
+    GRADIENT_ACCUMULATION_STEPS = 2
+    MAX_GRAD_NORM = 1.0
     
     # Data Configuration
     TEST_SIZE = 0.15
@@ -27,24 +32,25 @@ class Config:
     # Paths
     DATA_PATH = 'data/raw/Resume.csv'
     MODEL_SAVE_PATH = 'models/resume_classifier'
-    GOOGLE_DRIVE_URL = 'https://drive.google.com/uc?id=1QWJo26V-95XF1uGJKKVnnf96uaclAENk'
+    DEBIASED_MODEL_PATH = 'models/resume_classifier_debiased'
     
-    # Enhanced Training
-    GRADIENT_ACCUMULATION_STEPS = 2  # Effective batch size of 16
-    MAX_GRAD_NORM = 1.0  # Gradient clipping
+    # Enhanced Features
+    USE_FOCAL_LOSS = True
+    ENHANCED_BALANCING = True
     
     @staticmethod
-    def display_config():
-        """Display configuration for presentation"""
+    def display_enhanced_config():
+        """Display enhanced configuration for final submission"""
         print("=" * 60)
-        print("OPTIMIZED PROJECT CONFIGURATION")
+        print("ENHANCED PROJECT CONFIGURATION - FINAL SUBMISSION")
         print("=" * 60)
         print(f"Model: {Config.MODEL_NAME}")
         print(f"Max Length: {Config.MAX_LENGTH} tokens")
         print(f"Batch Size: {Config.BATCH_SIZE}")
-        print(f"Effective Batch Size: {Config.BATCH_SIZE * Config.GRADIENT_ACCUMULATION_STEPS}")
         print(f"Epochs: {Config.NUM_EPOCHS}")
         print(f"Learning Rate: {Config.LEARNING_RATE}")
+        print(f"Focal Loss: {Config.USE_FOCAL_LOSS}")
+        print(f"Enhanced Balancing: {Config.ENHANCED_BALANCING}")
+        print(f"Dropout: {Config.DROPOUT_RATE}")
         print(f"Early Stopping: {Config.EARLY_STOPPING_PATIENCE}")
-        print(f"Train/Val/Test Split: 70%/15%/15%")
         print("=" * 60)
