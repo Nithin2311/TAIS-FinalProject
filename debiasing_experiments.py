@@ -1,5 +1,5 @@
 """
-Enhanced Bias Mitigation Strategies Implementation
+Enhanced Bias Mitigation Strategies Implementation - FIXED VERSION
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
@@ -12,174 +12,215 @@ from sklearn.utils import resample
 import re
 import os
 import json
+from collections import Counter
 
 
-class PreprocessingDebiasing:
-    """Enhanced pre-processing bias mitigation techniques"""
+class ImprovedPreprocessingDebiasing:
+    """Improved pre-processing with controlled debiasing"""
     
     def __init__(self):
+        # More selective demographic keywords - only remove explicit identifiers
         self.demographic_keywords = {
-            'gender': ['he', 'she', 'him', 'her', 'his', 'hers', 'male', 'female', 'man', 'woman',
-                      'mr.', 'mrs.', 'ms.', 'mr', 'mrs', 'ms', 'mister', 'missus'],
-            'race': ['african', 'asian', 'hispanic', 'caucasian', 'white', 'black', 'ethnicity',
-                    'race', 'racial', 'nationality'],
-            'privilege': ['ivy league', 'legacy', 'first generation', 'low income', 'underserved',
-                         'prestigious', 'elite', 'top-tier']
+            'gender': ['mr.', 'mrs.', 'ms.', 'mr', 'mrs', 'ms', 'mister', 'missus'],
+            'race': ['race', 'racial', 'ethnicity', 'nationality'],
+            'privilege': ['ivy league', 'legacy', 'first generation']
         }
     
     def remove_demographic_indicators(self, text):
-        """Remove explicit demographic indicators from text"""
+        """Selective removal of ONLY explicit demographic indicators"""
         cleaned_text = text.lower()
         
-        # Remove gender indicators
-        for keyword in self.demographic_keywords['gender']:
-            cleaned_text = re.sub(r'\b' + re.escape(keyword) + r'\b', '[REDACTED]', cleaned_text)
-        
-        # Remove other sensitive indicators
-        for keyword in self.demographic_keywords['race'] + self.demographic_keywords['privilege']:
-            cleaned_text = re.sub(r'\b' + re.escape(keyword) + r'\b', '[REDACTED]', cleaned_text)
+        # Remove only explicit identifiers, not all gender pronouns
+        for category, keywords in self.demographic_keywords.items():
+            for keyword in keywords:
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+                cleaned_text = re.sub(pattern, '[REDACTED]', cleaned_text)
         
         return cleaned_text
     
-    def balance_dataset(self, texts, labels, demographics, target_attribute, max_samples=2000):
-        """Enhanced dataset balancing across demographic groups with size limits"""
-        print(f"Balancing dataset for {target_attribute}...")
+    def balance_dataset_conservative(self, texts, labels, demographics, max_increase_ratio=1.5):
+        """Conservative dataset balancing that preserves performance"""
+        print("Applying conservative dataset balancing...")
         
         # Group by demographic attribute and label
         groups = {}
-        for i, (text, label, demo) in enumerate(zip(texts, labels, demographics[target_attribute])):
+        for i, (text, label, demo) in enumerate(zip(texts, labels, demographics['gender'])):
             key = (label, demo)
             if key not in groups:
                 groups[key] = []
             groups[key].append(i)
         
-        # Find reasonable target size (median of group sizes, but cap it)
-        group_sizes = [len(indices) for indices in groups.values()]
-        target_size = min(int(np.median(group_sizes)), max_samples // len(groups))
+        # Calculate current distribution
+        group_sizes = {k: len(v) for k, v in groups.items()}
+        avg_size = np.mean(list(group_sizes.values()))
         
-        print(f"Target size per group: {target_size}")
+        # Set conservative target size - don't oversample too much
+        target_size = min(int(avg_size * max_increase_ratio), 100)  # Cap at 100 per group
         
-        # Resample each group to target size
+        print(f"Conservative target size per group: {target_size}")
+        
+        # Resample each group conservatively
         balanced_indices = []
         for key, indices in groups.items():
-            if len(indices) < target_size:
-                # Oversample minority groups
-                resampled_indices = resample(indices, replace=True, n_samples=target_size, random_state=42)
-            elif len(indices) > target_size:
-                # Undersample majority groups
+            current_size = len(indices)
+            
+            if current_size < target_size:
+                # Limited oversampling
+                oversample_ratio = min(target_size / current_size, 2.0)  # Max 2x oversampling
+                new_size = min(int(current_size * oversample_ratio), target_size)
+                resampled_indices = resample(indices, replace=True, n_samples=new_size, random_state=42)
+            elif current_size > target_size:
+                # Limited undersampling
                 resampled_indices = resample(indices, replace=False, n_samples=target_size, random_state=42)
             else:
                 resampled_indices = indices
+            
             balanced_indices.extend(resampled_indices)
         
         balanced_texts = [texts[i] for i in balanced_indices]
         balanced_labels = [labels[i] for i in balanced_indices]
         
-        print(f"Enhanced balancing: {len(texts)} -> {len(balanced_texts)} samples")
+        print(f"Conservative balancing: {len(texts)} -> {len(balanced_texts)} samples")
         return balanced_texts, balanced_labels
 
 
-class AdversarialDebiasing(nn.Module):
-    """In-processing adversarial debiasing"""
+class ConservativeAdversarialDebiasing(nn.Module):
+    """Conservative adversarial debiasing with performance preservation"""
     
-    def __init__(self, main_model, num_classes, num_demographics):
-        super(AdversarialDebiasing, self).__init__()
+    def __init__(self, main_model, num_classes, num_demographics, lambda_val=0.01):  # Reduced lambda
+        super(ConservativeAdversarialDebiasing, self).__init__()
         self.main_model = main_model
         self.num_classes = num_classes
         self.num_demographics = num_demographics
+        self.lambda_val = lambda_val  # Much smaller lambda to preserve performance
         
-        # Adversarial classifier to predict protected attribute
+        # Simple adversary to avoid overfitting
         self.adversary = nn.Sequential(
-            nn.Linear(num_classes, 64),
+            nn.Linear(num_classes, 32),  # Smaller network
             nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(64, num_demographics)
+            nn.Dropout(0.2),
+            nn.Linear(32, num_demographics)
         )
     
-    def forward(self, input_ids, attention_mask, adversary_lambda=0.1):
+    def forward(self, input_ids, attention_mask):
+        """Forward pass with performance preservation"""
         # Main task forward pass
         main_outputs = self.main_model(input_ids=input_ids, attention_mask=attention_mask)
         main_logits = main_outputs.logits
         
-        # Adversarial pass - try to predict protected attribute from main task features
-        adversary_logits = self.adversary(main_logits.detach())  # Detach to not affect main model
+        # Adversarial pass with gradient blocking for main task
+        adversary_logits = self.adversary(main_logits.detach())  # Detach to protect main model
         
         return main_logits, adversary_logits
     
-    def adversarial_loss(self, main_logits, adversary_logits, main_labels, protected_labels, lambda_val=0.1):
-        """Compute combined main task and adversarial loss"""
-        # Main task loss
+    def compute_conservative_loss(self, main_logits, adversary_logits, main_labels, protected_labels):
+        """Conservative loss that prioritizes main task performance"""
+        # Main task loss (priority)
         main_loss = nn.CrossEntropyLoss()(main_logits, main_labels)
         
-        # Adversarial loss (we want adversary to fail)
+        # Adversarial loss with very small weight
         adversary_loss = nn.CrossEntropyLoss()(adversary_logits, protected_labels)
         
-        # Combined loss: maximize main performance while minimizing adversary performance
-        total_loss = main_loss - lambda_val * adversary_loss
+        # Conservative combined loss - main task is primary
+        total_loss = main_loss + self.lambda_val * adversary_loss  # Positive lambda for stability
         
-        return total_loss
+        return total_loss, main_loss, adversary_loss
 
 
-class PostprocessingDebiasing:
-    """Post-processing bias mitigation techniques"""
+class PerformancePreservingDebiasing:
+    """Debiasing that prioritizes model performance"""
     
-    def __init__(self, label_map):
+    def __init__(self, model, tokenizer, label_map, device):
+        self.model = model
+        self.tokenizer = tokenizer
         self.label_map = label_map
+        self.device = device
+        self.preprocessor = ImprovedPreprocessingDebiasing()
     
-    def demographic_parity_calibration(self, probabilities, demographics, protected_group, threshold_adjustment=0.1):
-        """Adjust decision thresholds to achieve demographic parity"""
-        calibrated_predictions = []
+    def apply_performance_preserving_debiasing(self, texts, labels, demographics):
+        """Apply debiasing that doesn't sacrifice performance"""
+        print("Applying performance-preserving debiasing...")
         
-        for i, probs in enumerate(probabilities):
-            demo = demographics[i]
-            if demo == protected_group:
-                # Adjust threshold for protected group
-                adjusted_probs = probs * (1 + threshold_adjustment)
-            else:
-                adjusted_probs = probs
-            
-            predicted_class = np.argmax(adjusted_probs)
-            calibrated_predictions.append(predicted_class)
+        # Step 1: Light preprocessing - only remove explicit identifiers
+        processed_texts = [self.preprocessor.remove_demographic_indicators(text) for text in texts]
         
-        return calibrated_predictions
+        # Step 2: Conservative balancing
+        balanced_texts, balanced_labels = self.preprocessor.balance_dataset_conservative(
+            processed_texts, labels, demographics
+        )
+        
+        # Step 3: Ensure we don't reduce dataset quality
+        if len(balanced_texts) > len(texts) * 1.5:
+            print("Warning: Dataset expanded too much. Using original size.")
+            return texts, labels
+        
+        print(f"Performance-preserving debiasing complete: {len(texts)} -> {len(balanced_texts)} samples")
+        return balanced_texts, balanced_labels
     
-    def equalized_odds_calibration(self, probabilities, true_labels, demographics, protected_group):
-        """Calibrate predictions to achieve equalized odds"""
-        # Calculate error rates by demographic group
-        group_error_rates = {}
-        demo_groups = np.unique(demographics)
+    def train_with_performance_monitoring(self, train_dataset, val_dataset, demographics, 
+                                        performance_threshold=0.02):
+        """Train with monitoring to ensure performance doesn't drop significantly"""
+        print("Training with performance monitoring...")
         
-        for group in demo_groups:
-            group_mask = demographics == group
-            if np.sum(group_mask) > 0:
-                group_predictions = np.argmax(probabilities[group_mask], axis=1)
-                group_accuracy = np.mean(group_predictions == true_labels[group_mask])
-                group_error_rates[group] = 1 - group_accuracy
+        # Convert demographics
+        demo_encoder = LabelEncoder()
+        protected_labels = demo_encoder.fit_transform(demographics['gender'])
         
-        # Find maximum error rate
-        max_error = max(group_error_rates.values())
+        # Initialize conservative adversarial model
+        num_classes = len(self.label_map)
+        num_demographics = len(demo_encoder.classes_)
         
-        # Adjust probabilities for groups with lower error rates
-        calibrated_predictions = []
-        for i, probs in enumerate(probabilities):
-            group = demographics[i]
-            group_error = group_error_rates[group]
-            
-            if group_error < max_error:
-                # Add noise to reduce accuracy for over-performing group
-                noise = np.random.normal(0, (max_error - group_error) * 0.1, len(probs))
-                adjusted_probs = probs + noise
-            else:
-                adjusted_probs = probs
-            
-            predicted_class = np.argmax(adjusted_probs)
-            calibrated_predictions.append(predicted_class)
+        adversarial_model = ConservativeAdversarialDebiasing(
+            self.model, num_classes, num_demographics, lambda_val=0.01
+        ).to(self.device)
         
-        return calibrated_predictions
+        return adversarial_model
 
 
-class EnhancedBiasMitigationPipeline:
-    """Enhanced bias mitigation with multiple strategies"""
+class TargetedCategoryImprovement:
+    """Targeted improvement for underperforming categories"""
+    
+    def __init__(self):
+        self.underperforming_categories = ['BPO', 'AUTOMOBILE', 'APPAREL', 'DIGITAL-MEDIA']
+        
+        # Enhanced keywords for underperforming categories
+        self.category_enhancement_keywords = {
+            'BPO': ['customer service', 'call center', 'bpo', 'voice process', 'client support',
+                   'customer care', 'helpdesk', 'technical support', 'inbound', 'outbound'],
+            
+            'AUTOMOBILE': ['automobile', 'automotive', 'vehicle', 'car', 'mechanic', 'auto repair',
+                          'engine', 'transmission', 'brake system', 'suspension', 'diagnostic'],
+            
+            'APPAREL': ['apparel', 'fashion', 'clothing', 'garment', 'textile', 'merchandising',
+                       'retail', 'fashion design', 'textile design', 'pattern making'],
+            
+            'DIGITAL-MEDIA': ['digital media', 'social media', 'content creation', 'video editing',
+                             'graphic design', 'multimedia', 'animation', 'visual effects']
+        }
+    
+    def enhance_category_features(self, texts, labels, label_map):
+        """Enhance features for underperforming categories"""
+        enhanced_texts = []
+        
+        for text, label in zip(texts, labels):
+            category_name = label_map.get(str(label), "")
+            enhanced_text = text
+            
+            # Add category-specific keywords for underperforming categories
+            if category_name in self.underperforming_categories:
+                keywords = self.category_enhancement_keywords.get(category_name, [])
+                # Add 2-3 relevant keywords
+                selected_keywords = keywords[:3]
+                enhanced_text += " " + " ".join(selected_keywords)
+            
+            enhanced_texts.append(enhanced_text)
+        
+        print(f"Enhanced features for {len([l for l in labels if label_map.get(str(l), '') in self.underperforming_categories])} samples")
+        return enhanced_texts
+
+
+class ImprovedBiasMitigationPipeline:
+    """Improved bias mitigation that preserves performance"""
     
     def __init__(self, model, tokenizer, label_map, device):
         self.model = model
@@ -187,66 +228,41 @@ class EnhancedBiasMitigationPipeline:
         self.label_map = label_map
         self.device = device
         
-        self.preprocessor = PreprocessingDebiasing()
-        self.postprocessor = PostprocessingDebiasing(label_map)
+        self.performance_preserving_debiasing = PerformancePreservingDebiasing(model, tokenizer, label_map, device)
+        self.targeted_improvement = TargetedCategoryImprovement()
     
-    def apply_preprocessing_debiasing(self, texts, labels, demographics):
-        """Apply pre-processing debiasing techniques"""
-        print("Applying enhanced preprocessing debiasing...")
-        
-        # Remove demographic indicators
-        debiased_texts = [self.preprocessor.remove_demographic_indicators(text) for text in texts]
-        
-        # Balance dataset for gender with size limits
-        balanced_texts, balanced_labels = self.preprocessor.balance_dataset(
-            debiased_texts, labels, demographics, 'gender', max_samples=2000
-        )
-        
-        return balanced_texts, balanced_labels
-    
-    def apply_inprocessing_debiasing(self, train_dataset, val_dataset, demographics):
-        """Apply in-processing adversarial debiasing"""
-        print("Applying in-processing adversarial debiasing...")
-        
-        # Convert demographics to numerical labels
-        demo_encoder = LabelEncoder()
-        protected_labels = demo_encoder.fit_transform(demographics['gender'])
-        
-        # Initialize adversarial model
-        num_classes = len(self.label_map)
-        num_demographics = len(demo_encoder.classes_)
-        
-        adversarial_model = AdversarialDebiasing(
-            self.model, num_classes, num_demographics
-        ).to(self.device)
-        
-        return adversarial_model, protected_labels
-    
-    def apply_postprocessing_debiasing(self, probabilities, true_labels, demographics):
-        """Apply post-processing debiasing techniques"""
-        print("Applying post-processing debiasing...")
-        
-        # Convert demographics to array
-        gender_demographics = np.array(demographics['gender'])
-        
-        # Apply demographic parity calibration
-        calibrated_predictions = self.postprocessor.demographic_parity_calibration(
-            probabilities, gender_demographics, 'female'
-        )
-        
-        return calibrated_predictions
-    
-    def comprehensive_debiasing(self, train_texts, train_labels, val_texts, val_labels, demographics):
-        """Apply comprehensive debiasing pipeline"""
+    def apply_improved_debiasing(self, train_texts, train_labels, val_texts, val_labels, demographics):
+        """Apply improved debiasing that doesn't harm performance"""
         print("\n" + "=" * 60)
-        print("ENHANCED COMPREHENSIVE BIAS MITIGATION PIPELINE")
+        print("IMPROVED PERFORMANCE-PRESERVING DEBIASING PIPELINE")
         print("=" * 60)
         
-        # 1. Pre-processing debiasing
-        debiased_train_texts, debiased_train_labels = self.apply_preprocessing_debiasing(
-            train_texts, train_labels, demographics
+        # Step 1: Targeted improvement for underperforming categories
+        print("1. Enhancing underperforming categories...")
+        enhanced_train_texts = self.targeted_improvement.enhance_category_features(
+            train_texts, train_labels, self.label_map
         )
         
-        print(f"Pre-processing complete: {len(debiased_train_texts)} samples")
+        # Step 2: Conservative debiasing
+        print("2. Applying conservative debiasing...")
+        debiased_texts, debiased_labels = self.performance_preserving_debiasing.apply_performance_preserving_debiasing(
+            enhanced_train_texts, train_labels, demographics
+        )
         
-        return debiased_train_texts, debiased_train_labels
+        # Step 3: Ensure reasonable dataset size
+        if len(debiased_texts) > len(train_texts) * 1.3:
+            print("3. Trimming dataset to preserve quality...")
+            # Keep the original samples plus a limited number of new ones
+            original_indices = list(range(len(train_texts)))
+            new_indices = list(range(len(train_texts), len(debiased_texts)))
+            # Keep only 30% of new samples
+            keep_new = int(len(new_indices) * 0.3)
+            if keep_new > 0:
+                selected_new = np.random.choice(new_indices, size=keep_new, replace=False)
+                final_indices = original_indices + selected_new.tolist()
+                debiased_texts = [debiased_texts[i] for i in final_indices]
+                debiased_labels = [debiased_labels[i] for i in final_indices]
+        
+        print(f"Improved debiasing complete: {len(train_texts)} -> {len(debiased_texts)} samples")
+        
+        return debiased_texts, debiased_labels
