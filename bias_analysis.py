@@ -98,7 +98,7 @@ def run_bias_analysis_for_model(model_type='baseline', training_data=None):
         if training_data is None:
             return None
     
-    # Determine model path - FIXED: Use improved model for debiased analysis
+    # Determine model path
     if model_type == 'baseline':
         model_path = 'models/resume_classifier'
     elif model_type == 'debiased':
@@ -106,10 +106,10 @@ def run_bias_analysis_for_model(model_type='baseline', training_data=None):
         improved_path = 'models/resume_classifier_debiased_improved'
         if os.path.exists(improved_path):
             model_path = improved_path
-            print("✅ Using IMPROVED debiased model for analysis")
+            print("Using IMPROVED debiased model for analysis")
         else:
             model_path = 'models/resume_classifier_debiased'
-            print("⚠️  Using standard debiased model for analysis")
+            print("Using standard debiased model for analysis")
     else:
         print(f"Unknown model type: {model_type}")
         return None
@@ -226,14 +226,14 @@ def train_improved_debiased_model(training_data):
     
     # Conservative training arguments
     training_args = TrainingArguments(
-        output_dir='models/resume_classifier_debiased_improved',  # Keep improved suffix
-        num_train_epochs=8,  # Reduced epochs
+        output_dir='models/resume_classifier_debiased_improved',
+        num_train_epochs=8,
         per_device_train_batch_size=8,
         per_device_eval_batch_size=16,
-        learning_rate=1.5e-5,  # Slightly higher for stability
+        learning_rate=1.5e-5,
         warmup_ratio=0.1,
         weight_decay=0.01,
-        gradient_accumulation_steps=1,  # No accumulation for stability
+        gradient_accumulation_steps=1,
         max_grad_norm=1.0,
         eval_strategy="epoch",
         save_strategy="epoch",
@@ -248,7 +248,7 @@ def train_improved_debiased_model(training_data):
     )
     
     # Early stopping
-    early_stopping = EarlyStoppingCallback(early_stopping_patience=2)  # More aggressive early stopping
+    early_stopping = EarlyStoppingCallback(early_stopping_patience=2)
     
     # Create trainer
     trainer = EnhancedTrainer(
@@ -258,7 +258,7 @@ def train_improved_debiased_model(training_data):
         eval_dataset=val_dataset,
         compute_metrics=compute_metrics,
         class_weights=class_weights,
-        use_focal_loss=True,  # Keep focal loss for imbalanced data
+        use_focal_loss=True,
         callbacks=[early_stopping]
     )
     
@@ -295,12 +295,12 @@ def train_improved_debiased_model(training_data):
     print(f"Improved debiased model trained with accuracy: {accuracy:.4f}")
     
     # Performance check
-    baseline_accuracy = 0.8633  # From your baseline
-    if accuracy < baseline_accuracy - 0.03:  # Allow 3% drop max
-        print("⚠️  Warning: Significant performance drop detected!")
+    baseline_accuracy = 0.8633
+    if accuracy < baseline_accuracy - 0.03:
+        print("Warning: Significant performance drop detected!")
         print("Consider using less aggressive debiasing or focusing on targeted improvements only.")
     else:
-        print("✅ Performance preserved within acceptable range!")
+        print("Performance preserved within acceptable range!")
     
     return {
         'trainer': trainer,
@@ -315,7 +315,7 @@ def enhanced_compare_models():
     print("ENHANCED COMPARISON: BASELINE vs DEBIASED MODELS")
     print("=" * 60)
     
-    # Load results - FIXED: Use improved results if available
+    # Load results
     try:
         with open('results/baseline_bias_report.json', 'r') as f:
             baseline_report = json.load(f)
@@ -325,7 +325,7 @@ def enhanced_compare_models():
         if os.path.exists(improved_results_path):
             with open(improved_results_path, 'r') as f:
                 debiased_results = json.load(f)
-            print("✅ Using IMPROVED debiased results for comparison")
+            print("Using IMPROVED debiased results for comparison")
         else:
             with open('results/enhanced_debiased_results.json', 'r') as f:
                 debiased_results = json.load(f)
@@ -343,7 +343,6 @@ def enhanced_compare_models():
             
     except Exception as e:
         print(f"Error loading results: {e}")
-        # Try to load alternative file names
         try:
             with open('results/training_results.json', 'r') as f:
                 baseline_results = json.load(f)
@@ -441,9 +440,9 @@ def enhanced_compare_models():
     category_improvement = comparison['category_improvements']['avg_improvement']
     cf_improvement = comparison['counterfactual_improvement']['improvement']
     
-    # Weighted overall score - FIXED: More balanced weighting
+    # Weighted overall score
     overall_score = float(
-        accuracy_improvement * 0.3 +  # Increased weight for accuracy
+        accuracy_improvement * 0.3 +
         max(fairness_improvement, 0) * 0.25 +
         max(bias_reduction, 0) * 0.2 +
         min(category_improvement * 10, 1.0) * 0.15 +
@@ -496,30 +495,29 @@ def print_enhanced_comparison_summary(comparison):
     print("=" * 60)
     
     perf = comparison['performance']
-    print(f"\n📊 PERFORMANCE:")
+    print(f"\nPERFORMANCE:")
     print(f"  Baseline Accuracy: {perf['baseline_accuracy']:.3f}")
     print(f"  Debiased Accuracy: {perf['debiased_accuracy']:.3f}")
     print(f"  Change: {perf['accuracy_change_percent']:+.2f}%")
     
     bias_red = comparison['bias_reduction']['gender_bias']
-    print(f"\n⚖️  BIAS REDUCTION:")
+    print(f"\nBIAS REDUCTION:")
     print(f"  Baseline Gender Bias: {bias_red['baseline']:.3f}")
     print(f"  Debiased Gender Bias: {bias_red['debiased']:.3f}")
     print(f"  Reduction: {bias_red['reduction_percent']:+.2f}%")
     
     cf_improvement = comparison['counterfactual_improvement']
-    print(f"\n🔄 COUNTERFACTUAL FAIRNESS:")
+    print(f"\nCOUNTERFACTUAL FAIRNESS:")
     print(f"  Baseline: {cf_improvement['baseline']:.3f}")
     print(f"  Debiased: {cf_improvement['debiased']:.3f}")
     print(f"  Improvement: {cf_improvement['improvement']:+.3f}")
     
-    print(f"\n📈 FAIRNESS IMPROVEMENTS:")
+    print(f"\nFAIRNESS IMPROVEMENTS:")
     for demo_type, improvement in comparison['fairness_improvement'].items():
-        arrow = "🔼" if improvement['improvement'] > 0 else "🔽"
-        color = "🟢" if improvement['improvement'] > 0.02 else "🟡" if improvement['improvement'] > 0 else "🔴"
-        print(f"  {demo_type.upper():20s}: {improvement['improvement']:+.3f} {arrow} {color}")
+        arrow = "▲" if improvement['improvement'] > 0 else "▼"
+        print(f"  {demo_type.upper():20s}: {improvement['improvement']:+.3f} {arrow}")
     
-    print(f"\n🎯 CATEGORY IMPROVEMENTS:")
+    print(f"\nCATEGORY IMPROVEMENTS:")
     improvements = comparison['category_improvements']
     print(f"  Categories Improved: {improvements['total_improved']}")
     print(f"  Average Improvement: {improvements['avg_improvement']:.3f}")
@@ -529,7 +527,7 @@ def print_enhanced_comparison_summary(comparison):
             print(f"    - {category}: +{imp:.3f}")
     
     assessment = comparison['overall_assessment']
-    print(f"\n🏆 OVERALL ASSESSMENT: {assessment['rating']} (Score: {assessment['score']:.3f})")
+    print(f"\nOVERALL ASSESSMENT: {assessment['rating']} (Score: {assessment['score']:.3f})")
     print(f"  Summary: {assessment['summary']}")
     print("=" * 60)
 
@@ -561,7 +559,7 @@ def generate_enhanced_comparison_visualizations(baseline_report, debiased_report
                     for demo in demo_types:
                         baseline_val = baseline_report['fairness_metrics'][demo].get(metric, 0)
                         debiased_val = debiased_report['fairness_metrics'][demo].get(metric, 0)
-                        if baseline_val != 0 or debiased_val != 0:  # Only include if we have data
+                        if baseline_val != 0 or debiased_val != 0:
                             baseline_values.append(float(baseline_val))
                             debiased_values.append(float(debiased_val))
                             valid_demo_types.append(demo)
@@ -605,7 +603,7 @@ def generate_enhanced_comparison_visualizations(baseline_report, debiased_report
             comparison_results['performance']['baseline_accuracy'],
             comparison_results['bias_reduction']['gender_bias']['baseline'],
             np.mean([v['baseline'] for v in comparison_results['fairness_improvement'].values()]) if comparison_results['fairness_improvement'] else 0,
-            0.5,  # Baseline reference
+            0.5,
             comparison_results['counterfactual_improvement']['baseline']
         ]
         
@@ -622,7 +620,7 @@ def generate_enhanced_comparison_visualizations(baseline_report, debiased_report
         debiased_norm = [min(1.0, m * 2 if i == 1 else m) for i, m in enumerate(debiased_metrics)]
         
         angles = np.linspace(0, 2*np.pi, len(categories), endpoint=False).tolist()
-        angles += angles[:1]  # Complete the circle
+        angles += angles[:1]
         
         baseline_norm += baseline_norm[:1]
         debiased_norm += debiased_norm[:1]
@@ -668,32 +666,32 @@ def run_enhanced_comprehensive_analysis():
         return None
     
     # Step 1: Run enhanced bias analysis for baseline model
-    print("\n🔍 ANALYZING BASELINE MODEL...")
+    print("\nANALYZING BASELINE MODEL...")
     baseline_report = run_bias_analysis_for_model('baseline', training_data)
     if baseline_report is None:
         print("Failed to analyze baseline model. Please ensure baseline model is trained.")
         return None
     
     # Step 2: Train IMPROVED debiased model
-    print("\n🛠️  TRAINING IMPROVED DEBIASED MODEL...")
+    print("\nTRAINING IMPROVED DEBIASED MODEL...")
     debiased_result = train_improved_debiased_model(training_data)
     if debiased_result is None:
         print("Failed to train improved debiased model.")
         return None
     
     # Step 3: Run enhanced bias analysis for improved debiased model
-    print("\n🔍 ANALYZING IMPROVED DEBIASED MODEL...")
+    print("\nANALYZING IMPROVED DEBIASED MODEL...")
     debiased_report = run_bias_analysis_for_model('debiased', training_data)
     if debiased_report is None:
         print("Failed to analyze improved debiased model.")
         return None
     
     # Step 4: Enhanced model comparison
-    print("\n📊 COMPARING MODELS...")
+    print("\nCOMPARING MODELS...")
     comparison = enhanced_compare_models()
     
     print("\n" + "=" * 60)
-    print("🎉 IMPROVED COMPREHENSIVE ANALYSIS COMPLETE!")
+    print("IMPROVED COMPREHENSIVE ANALYSIS COMPLETE!")
     print("=" * 60)
     
     return {
@@ -713,7 +711,7 @@ def main():
         return
     
     print("\n" + "=" * 60)
-    print("🏆 FINAL PROJECT ENHANCED ANALYSIS COMPLETE!")
+    print("FINAL PROJECT ENHANCED ANALYSIS COMPLETE!")
     print("=" * 60)
     
     # Enhanced final recommendations
@@ -724,28 +722,29 @@ def main():
         print(f"\nFINAL RATING: {rating} (Score: {score:.3f})")
         
         if rating in ['EXCELLENT', 'GOOD']:
-            print("✅ Debiasing strategies were highly effective")
-            print("✅ Model maintains or improves performance while reducing bias")
-            print("✅ Comprehensive fairness improvements achieved")
+            print("Debiasing strategies were highly effective")
+            print("Model maintains or improves performance while reducing bias")
+            print("Comprehensive fairness improvements achieved")
         elif rating == 'MODEST':
-            print("⚠️  Debiasing showed modest effectiveness")
-            print("⚠️  Some bias reduction with maintained performance")
-            print("ℹ️  Consider additional debiasing strategies")
+            print("Debiasing showed modest effectiveness")
+            print("Some bias reduction with maintained performance")
+            print("Consider additional debiasing strategies")
         else:
-            print("🔴 Debiasing had limited effectiveness")
-            print("🔴 Consider alternative approaches or data collection")
+            print("Debiasing had limited effectiveness")
+            print("Consider alternative approaches or data collection")
     
-    print("\n📁 Key Deliverables Generated:")
-    print("  ✅ Enhanced baseline model bias analysis")
-    print("  ✅ Enhanced debiased model training and analysis") 
-    print("  ✅ Comprehensive before/after comparison")
-    print("  ✅ Professional enhanced visualizations")
-    print("  ✅ Detailed fairness metrics and recommendations")
-    print("  ✅ LIME explainability integration")
-    print("  ✅ Intersectional bias analysis")
-    print("  ✅ Counterfactual fairness evaluation")
+    print("\nKey Deliverables Generated:")
+    print("  Enhanced baseline model bias analysis")
+    print("  Enhanced debiased model training and analysis") 
+    print("  Comprehensive before/after comparison")
+    print("  Professional enhanced visualizations")
+    print("  Detailed fairness metrics and recommendations")
+    print("  LIME explainability integration")
+    print("  SHAP analysis integration")
+    print("  Intersectional bias analysis")
+    print("  Counterfactual fairness evaluation")
     
-    print("\n📊 Files Generated:")
+    print("\nFiles Generated:")
     print("  results/baseline_bias_report.json")
     print("  results/debiased_bias_report.json") 
     print("  results/enhanced_model_comparison.json")
@@ -754,10 +753,10 @@ def main():
     print("  visualizations/enhanced_fairness_comparison.png")
     print("  visualizations/enhanced_performance_radar.png")
     
-    print("\n🚀 Next Steps:")
+    print("\nNext Steps:")
     print("  Launch enhanced Gradio interface: python gradio_app.py")
     print("  Review the comprehensive comparison report")
-    print("  Test LIME explanations in the web interface")
+    print("  Test LIME and SHAP explanations in the web interface")
     print("  Implement additional debiasing strategies if needed")
     print("=" * 60)
 
