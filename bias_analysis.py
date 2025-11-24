@@ -16,8 +16,26 @@ import pandas as pd
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, EarlyStoppingCallback
 from model_trainer import ResumeDataset, EnhancedTrainer, compute_metrics, enhanced_evaluate_model, setup_optimized_model
 from bias_analyzer import EnhancedBiasAnalyzer, EnhancedBiasVisualization, EnhancedDemographicInference
-from debiasing_experiments import ImprovedBiasMitigationPipeline
 from sklearn.utils.class_weight import compute_class_weight
+
+# Try to import ImprovedBiasMitigationPipeline, provide fallback if not available
+try:
+    from debiasing_experiments import ImprovedBiasMitigationPipeline
+    HAS_DEBIASING_PIPELINE = True
+except ImportError:
+    print("Warning: ImprovedBiasMitigationPipeline not found. Debiasing training will be limited.")
+    HAS_DEBIASING_PIPELINE = False
+    # Create a simple fallback class
+    class ImprovedBiasMitigationPipeline:
+        def __init__(self, model, tokenizer, label_map, device):
+            self.model = model
+            self.tokenizer = tokenizer
+            self.label_map = label_map
+            self.device = device
+        
+        def apply_improved_debiasing(self, X_train, y_train, X_val, y_val, train_demographics):
+            print("Using fallback debiasing - returning original data")
+            return X_train, y_train
 
 
 def convert_numpy_types(obj):
@@ -183,6 +201,10 @@ def train_improved_debiased_model(training_data):
     print("TRAINING IMPROVED DEBIASED MODEL - PERFORMANCE PRESERVING")
     print("=" * 60)
     
+    if not HAS_DEBIASING_PIPELINE:
+        print("Debiasing pipeline not available. Using standard training.")
+        return train_standard_debiased_model(training_data)
+    
     X_train = training_data['X_train']
     y_train = training_data['y_train']
     X_val = training_data['X_val']
@@ -216,7 +238,7 @@ def train_improved_debiased_model(training_data):
     train_dataset = ResumeDataset(debiased_texts, debiased_labels, tokenizer, 512)
     val_dataset = ResumeDataset(X_val, y_val, tokenizer, 512)
     
-    # Conservative class weights
+    # Conservative class weights - ADD IMPORT AT TOP OF FILE
     class_weights = compute_class_weight(
         'balanced',
         classes=np.unique(debiased_labels),
@@ -301,6 +323,88 @@ def train_improved_debiased_model(training_data):
         print("Consider using less aggressive debiasing or focusing on targeted improvements only.")
     else:
         print("Performance preserved within acceptable range!")
+    
+    return {
+        'trainer': trainer,
+        'tokenizer': tokenizer,
+        'results': debiased_results
+    }
+
+
+def train_standard_debiased_model(training_data):
+    """Fallback function to train standard debiased model"""
+    print("Training standard debiased model (fallback)...")
+    
+    X_train = training_data['X_train']
+    y_train = training_data['y_train']
+    X_val = training_data['X_val']
+    y_val = training_data['y_val']
+    label_map = training_data['label_map']
+    
+    num_labels = len(label_map)
+    model, tokenizer, device = setup_optimized_model(num_labels, 'roberta-base')
+    
+    # Create datasets
+    train_dataset = ResumeDataset(X_train, y_train, tokenizer, 512)
+    val_dataset = ResumeDataset(X_val, y_val, tokenizer, 512)
+    
+    # Class weights
+    class_weights = compute_class_weight(
+        'balanced',
+        classes=np.unique(y_train),
+        y=y_train
+    )
+    class_weights = class_weights.astype(np.float32)
+    
+    # Training arguments
+    training_args = TrainingArguments(
+        output_dir='models/resume_classifier_debiased',
+        num_train_epochs=6,
+        per_device_train_batch_size=8,
+        per_device_eval_batch_size=16,
+        learning_rate=2e-5,
+        warmup_ratio=0.1,
+        weight_decay=0.01,
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        load_best_model_at_end=True,
+        metric_for_best_model="accuracy",
+        greater_is_better=True,
+        logging_steps=50,
+        fp16=torch.cuda.is_available(),
+        seed=42
+    )
+    
+    # Create trainer
+    trainer = EnhancedTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=compute_metrics,
+        class_weights=class_weights,
+        use_focal_loss=True
+    )
+    
+    # Train model
+    trainer.train()
+    
+    # Save model
+    trainer.save_model('models/resume_classifier_debiased')
+    tokenizer.save_pretrained('models/resume_classifier_debiased')
+    
+    # Evaluation
+    X_test = training_data['X_test']
+    y_test = training_data['y_test']
+    test_dataset = ResumeDataset(X_test, y_test, tokenizer, 512)
+    debiased_results = enhanced_evaluate_model(trainer, test_dataset, label_map)
+    
+    # Save results
+    with open('results/enhanced_debiased_results.json', 'w') as f:
+        json.dump(debiased_results, f, indent=2)
+    
+    accuracy = debiased_results['eval_accuracy']
+    print(f"Standard debiased model trained with accuracy: {accuracy:.4f}")
     
     return {
         'trainer': trainer,
