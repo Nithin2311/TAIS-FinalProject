@@ -20,6 +20,140 @@ import shap
 import lime
 import lime.lime_text
 from lime import submodular_pick
+import warnings
+warnings.filterwarnings('ignore')
+
+
+class LimeExplainer:
+    """Enhanced LIME explainer for model predictions with better error handling"""
+    
+    def __init__(self, model, tokenizer, label_map, device):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.label_map = label_map
+        self.device = device
+        
+        # Initialize LIME explainer with better configuration
+        self.explainer = lime.lime_text.LimeTextExplainer(
+            class_names=list(label_map.values()),
+            verbose=False,
+            random_state=42,
+            bow=False,  # Use word embeddings instead of bag of words
+            split_expression=lambda x: x.split()
+        )
+    
+    def explain_prediction(self, text, num_features=10):
+        """Generate LIME explanation for a prediction with robust error handling"""
+        if not text or len(text.strip()) < 10:
+            return None
+            
+        def predict_proba(texts):
+            probabilities = []
+            for text in texts:
+                try:
+                    inputs = self.tokenizer(
+                        text,
+                        truncation=True,
+                        padding=True,
+                        max_length=256,  # Reduced for stability
+                        return_tensors='pt'
+                    ).to(self.device)
+                    
+                    with torch.no_grad():
+                        outputs = self.model(**inputs)
+                        probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+                        probabilities.append(probs.cpu().numpy()[0])
+                except Exception as e:
+                    # Return uniform probabilities on error
+                    probabilities.append(np.ones(len(self.label_map)) / len(self.label_map))
+            
+            return np.array(probabilities)
+        
+        # Generate explanation with robust error handling
+        try:
+            # Ensure text is string and has sufficient length
+            text_str = str(text)
+            if len(text_str.split()) < 3:
+                return None
+                
+            exp = self.explainer.explain_instance(
+                text_str,
+                predict_proba,
+                num_features=min(num_features, len(text_str.split())),
+                num_samples=100,  # Reduced for speed
+                top_labels=1
+            )
+            return exp
+        except Exception as e:
+            print(f"LIME explanation generation failed: {e}")
+            return None
+    
+    def plot_explanation(self, exp, label):
+        """Plot LIME explanation as matplotlib figure with enhanced visualization"""
+        try:
+            if exp is None:
+                return self._create_error_plot("No explanation generated")
+                
+            fig, ax = plt.subplots(figsize=(12, 8))
+            
+            # Get explanation data
+            exp_list = exp.as_list(label=label)
+            
+            if not exp_list:
+                return self._create_error_plot("No features to explain")
+            
+            # Sort by absolute importance
+            exp_list.sort(key=lambda x: abs(x[1]), reverse=True)
+            
+            # Take top features
+            top_features = exp_list[:10]
+            
+            # Create horizontal bar plot
+            features = [x[0] for x in top_features]
+            weights = [x[1] for x in top_features]
+            
+            colors = ['green' if w > 0 else 'red' for w in weights]
+            y_pos = np.arange(len(features))
+            
+            ax.barh(y_pos, weights, color=colors, alpha=0.7)
+            ax.set_yticks(y_pos)
+            ax.set_yticklabels(features, fontsize=10)
+            ax.set_xlabel('Feature Importance', fontsize=12)
+            ax.set_title(f'LIME Explanation for {self.label_map.get(str(label), f"Class {label}")}', 
+                        fontsize=14, fontweight='bold', pad=20)
+            
+            # Add value annotations
+            for i, v in enumerate(weights):
+                ax.text(v + (0.01 if v >= 0 else -0.01), i, f'{v:.3f}', 
+                       color='black', fontsize=9, va='center',
+                       ha='left' if v >= 0 else 'right')
+            
+            plt.tight_layout()
+            
+            # Convert to bytes
+            buf = plt.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            buf.seek(0)
+            return buf
+            
+        except Exception as e:
+            print(f"LIME plot generation failed: {e}")
+            return self._create_error_plot(f"Explanation error: {str(e)}")
+    
+    def _create_error_plot(self, message):
+        """Create an error message plot"""
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.text(0.5, 0.5, message, 
+                ha='center', va='center', transform=ax.transAxes, 
+                fontsize=12, wrap=True)
+        ax.axis('off')
+        
+        buf = plt.BytesIO()
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return buf
 
 
 class EnhancedDemographicInference:
