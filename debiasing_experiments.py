@@ -21,10 +21,99 @@ import base64
 from io import BytesIO
 import shap
 import time
+from collections import Counter
+
+
+
+class ImprovedBiasMitigationPipeline:
+    """Improved bias mitigation pipeline for performance-preserving debiasing"""
+    
+    def __init__(self, model, tokenizer, label_map, device):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.label_map = label_map
+        self.device = device
+        self.demo_inference = EnhancedDemographicInference()
+    
+    def apply_improved_debiasing(self, X_train, y_train, X_val, y_val, train_demographics):
+      """Apply improved debiasing with performance preservation"""
+      print("Applying improved performance-preserving debiasing...")
+      
+      # Convert to lists for processing
+      X_train = list(X_train)
+      y_train = list(y_train)
+      
+      # Import Counter and analyze demographic distribution
+      from collections import Counter
+      gender_dist = Counter(train_demographics['gender'])
+      print(f"Original gender distribution: {dict(gender_dist)}")
+      
+      # Conservative augmentation - only augment severely imbalanced groups
+      debiased_texts = X_train.copy()
+      debiased_labels = y_train.copy()
+      
+      # Identify minority groups (less than 15% of data)
+      total_samples = len(X_train)
+      minority_threshold = 0.15 * total_samples
+      
+      minority_groups = []
+      for group, count in gender_dist.items():
+          if count < minority_threshold and group != 'unknown':
+              minority_groups.append(group)
+              print(f"Minority group detected: {group} with {count} samples")
+      
+      # Apply conservative augmentation only for severe imbalances
+      if minority_groups:
+          augmentation_factor = 2  # Conservative augmentation
+          for group in minority_groups:
+              group_indices = [i for i, g in enumerate(train_demographics['gender']) if g == group]
+              
+              if group_indices:
+                  # Augment minority group samples
+                  for idx in group_indices:
+                      original_text = X_train[idx]
+                      original_label = y_train[idx]
+                      
+                      # Create augmented versions
+                      for aug_idx in range(augmentation_factor - 1):
+                          # Simple augmentation: add minor variations
+                          augmented_text = self._augment_text(original_text)
+                          debiased_texts.append(augmented_text)
+                          debiased_labels.append(original_label)
+      
+      print(f"Debiased dataset: {len(debiased_texts)} samples (was {len(X_train)})")
+      return debiased_texts, debiased_labels
+    
+    def _augment_text(self, text):
+        """Apply conservative text augmentation"""
+        # Simple augmentation techniques
+        words = text.split()
+        
+        if len(words) > 10:
+            # Swap two random words (conservative change)
+            import random
+            if len(words) >= 2:
+                idx1, idx2 = random.sample(range(len(words)), 2)
+                words[idx1], words[idx2] = words[idx2], words[idx1]
+        
+        # Add minor variations
+        variations = [
+            " ",
+            ". ",
+            ", ",
+            "; "
+        ]
+        
+        import random
+        if len(words) > 5 and random.random() > 0.7:
+            insert_pos = random.randint(0, len(words) - 1)
+            words.insert(insert_pos, random.choice(variations).strip())
+        
+        return " ".join(words)
 
 
 class LimeExplainer:
-    """LIME explainer for model predictions"""
+    """LIME explainer for model predictions with improved error handling"""
     
     def __init__(self, model, tokenizer, label_map, device):
         self.model = model
@@ -57,7 +146,8 @@ class LimeExplainer:
                         outputs = self.model(**inputs)
                         probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
                         probabilities.append(probs.cpu().numpy()[0])
-                except:
+                except Exception as e:
+                    print(f"Prediction error in LIME: {e}")
                     probabilities.append(np.zeros(len(self.label_map)))
             
             return np.array(probabilities)
@@ -78,25 +168,26 @@ class LimeExplainer:
     def plot_explanation(self, exp, label):
         """Plot LIME explanation as matplotlib figure"""
         try:
-            fig = plt.figure(figsize=(10, 6))
+            fig = plt.figure(figsize=(12, 8))
             exp.as_pyplot_figure(label=label)
+            plt.title(f"LIME Explanation for {self.label_map.get(str(label), f'Class {label}')}", 
+                     fontsize=14, fontweight='bold', pad=20)
             plt.tight_layout()
             
-            # Convert to base64 for Gradio
+            # Convert to bytes for Gradio
             buf = BytesIO()
             plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
             plt.close(fig)
             buf.seek(0)
-            img_str = base64.b64encode(buf.read()).decode('utf-8')
-            return f"data:image/png;base64,{img_str}"
+            return buf
         except Exception as e:
-            print(f"Plot generation failed: {e}")
-            return self._create_error_plot()
+            print(f"LIME plot generation failed: {e}")
+            return self._create_error_plot("LIME explanation not available")
     
-    def _create_error_plot(self):
+    def _create_error_plot(self, message):
         """Create an error message plot"""
-        fig, ax = plt.subplots(figsize=(8, 2))
-        ax.text(0.5, 0.5, 'Explanation not available', 
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.text(0.5, 0.5, message, 
                 ha='center', va='center', transform=ax.transAxes, fontsize=12)
         ax.axis('off')
         
@@ -104,12 +195,11 @@ class LimeExplainer:
         plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
         plt.close(fig)
         buf.seek(0)
-        img_str = base64.b64encode(buf.read()).decode('utf-8')
-        return f"data:image/png;base64,{img_str}"
+        return buf
 
 
 class SHAPExplainer:
-    """SHAP explainer for model predictions"""
+    """SHAP explainer for model predictions with improved error handling"""
     
     def __init__(self, model, tokenizer, device):
         self.model = model
@@ -139,7 +229,8 @@ class SHAPExplainer:
                             outputs = self.model(**inputs)
                             probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
                             probabilities.append(probs.cpu().numpy()[0])
-                    except:
+                    except Exception as e:
+                        print(f"Prediction error in SHAP: {e}")
                         probabilities.append(np.zeros(self.model.config.num_labels))
                 
                 return np.array(probabilities)
@@ -151,21 +242,34 @@ class SHAPExplainer:
             shap_values = explainer([text])
             
             # Create visualization
-            plt.figure(figsize=(10, 6))
+            plt.figure(figsize=(12, 8))
             shap.plots.text(shap_values[0], show=False)
+            plt.title("SHAP Explanation", fontsize=14, fontweight='bold', pad=20)
             plt.tight_layout()
             
-            # Convert to base64
+            # Convert to bytes
             buf = BytesIO()
             plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
             plt.close()
             buf.seek(0)
-            img_str = base64.b64encode(buf.read()).decode('utf-8')
-            return f"data:image/png;base64,{img_str}"
+            return buf
             
         except Exception as e:
             print(f"SHAP explanation failed: {e}")
-            return None
+            return self._create_error_plot("SHAP explanation not available")
+    
+    def _create_error_plot(self, message):
+        """Create an error message plot"""
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.text(0.5, 0.5, message, 
+                ha='center', va='center', transform=ax.transAxes, fontsize=12)
+        ax.axis('off')
+        
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return buf
 
 
 class EnhancedDualModelResumeClassifier:
@@ -396,33 +500,33 @@ class EnhancedDualModelResumeClassifier:
                 try:
                     lime_explanation = self.lime_explainers[model_type].explain_prediction(enhanced_text)
                     if lime_explanation:
-                        lime_plot = self.lime_explainers[model_type].plot_explanation(lime_explanation, top_idx)
+                        lime_image = self.lime_explainers[model_type].plot_explanation(lime_explanation, top_idx)
                     else:
-                        lime_plot = self.lime_explainers[model_type]._create_error_plot()
+                        lime_image = self.lime_explainers[model_type]._create_error_plot("LIME explanation failed")
                 except Exception as e:
                     print(f"LIME explanation failed: {e}")
-                    lime_plot = self.lime_explainers[model_type]._create_error_plot()
+                    lime_image = self.lime_explainers[model_type]._create_error_plot("LIME explanation error")
                 
                 # Try SHAP explanation
                 try:
-                    shap_plot = self.shap_explainers[model_type].explain_prediction(enhanced_text)
+                    shap_image = self.shap_explainers[model_type].explain_prediction(enhanced_text)
                 except Exception as e:
                     print(f"SHAP explanation failed: {e}")
-                    shap_plot = None
+                    shap_image = self.shap_explainers[model_type]._create_error_plot("SHAP explanation not available")
                 
                 explanation_time = time.time() - explanation_start
                 print(f"Explanation generation: {explanation_time:.2f}s")
             else:
-                lime_plot = self.lime_explainers[model_type]._create_error_plot()
-                shap_plot = None
+                lime_image = self.lime_explainers[model_type]._create_error_plot("Explanations disabled")
+                shap_image = self.shap_explainers[model_type]._create_error_plot("Explanations disabled")
             
             return {
                 'result_text': result_text,
                 'predictions_df': df,
                 'confidence': float(top_confidence),
                 'demographics': demographics,
-                'lime_explanation': lime_plot,
-                'shap_explanation': shap_plot,
+                'lime_explanation': lime_image,
+                'shap_explanation': shap_image,
                 'prediction_time': prediction_time
             }
             
@@ -432,14 +536,14 @@ class EnhancedDualModelResumeClassifier:
     
     def _create_error_response(self, message):
         """Create error response"""
-        error_plot = self.lime_explainers['baseline']._create_error_plot() if 'baseline' in self.lime_explainers else "<div>Explanation not available</div>"
+        error_plot = self.lime_explainers['baseline']._create_error_plot("Error occurred") if 'baseline' in self.lime_explainers else None
         return {
             'result_text': f"## Error\n\n{message}",
             'predictions_df': pd.DataFrame([], columns=['Category', 'Confidence']),
             'confidence': 0.0,
             'demographics': {},
             'lime_explanation': error_plot,
-            'shap_explanation': None,
+            'shap_explanation': error_plot,
             'prediction_time': 0.0
         }
     
@@ -582,22 +686,61 @@ def create_enhanced_dual_model_interface():
             """)
         return demo
     
-    # Example resumes
+    # Enhanced examples with demographic variations for comprehensive bias testing
     examples = [
-        """Software Engineer with 5+ years experience in Python, Django, React, and AWS. 
-        Developed scalable web applications, implemented CI/CD pipelines, and led cross-functional teams.
-        Strong background in machine learning, cloud architecture, and agile methodologies.
-        Technologies: Python, JavaScript, React, Node.js, AWS, Docker, Kubernetes, TensorFlow.""",
-        
-        """Human Resources Manager with 8 years experience in talent acquisition and employee relations.
-        Implemented HRIS systems, reduced turnover by 35% through engagement programs.
-        MBA in Human Resource Management with SHRM-CP certification.
-        Skills: Talent Acquisition, Employee Relations, HRIS, Performance Management.""",
-        
-        """Data Scientist specializing in machine learning and statistical analysis.
-        Proficient in Python, R, SQL, TensorFlow, and Tableau. Experience with predictive modeling,
-        A/B testing, and big data technologies including Spark and Hadoop.
-        Skills: Machine Learning, Python, SQL, TensorFlow, Data Analysis."""
+        # Female name with technical background
+        """Emily Chen
+Software Engineer with 5+ years experience in Python, Django, React, and AWS. 
+Developed scalable web applications, implemented CI/CD pipelines, and led cross-functional teams.
+Strong background in machine learning, cloud architecture, and agile methodologies.
+Technologies: Python, JavaScript, React, Node.js, AWS, Docker, Kubernetes, TensorFlow.
+Education: MIT Computer Science 2018
+Volunteer: Women in Tech mentorship program""",
+
+        # Male name with business background  
+        """James Rodriguez
+Human Resources Manager with 8 years experience in talent acquisition and employee relations.
+Implemented HRIS systems, reduced turnover by 35% through engagement programs.
+MBA in Human Resource Management with SHRM-CP certification.
+Skills: Talent Acquisition, Employee Relations, HRIS, Performance Management.
+Previously worked at Google and McKinsey.
+Education: Harvard Business School""",
+
+        # African American male name with data science
+        """Darnell Washington
+Data Scientist specializing in machine learning and statistical analysis.
+Proficient in Python, R, SQL, TensorFlow, and Tableau. Experience with predictive modeling,
+A/B testing, and big data technologies including Spark and Hadoop.
+Skills: Machine Learning, Python, SQL, TensorFlow, Data Analysis.
+Education: Howard University, Mathematics 2017
+Member: National Society of Black Engineers""",
+
+        # Hispanic female name with healthcare
+        """Maria Garcia
+Registered Nurse with 6 years experience in emergency and critical care.
+Specialized in trauma care, patient advocacy, and emergency response protocols.
+Bilingual in English and Spanish. ACLS and PALS certified.
+Skills: Emergency Care, Patient Education, Medical Documentation, Team Leadership.
+Education: University of Texas Nursing Program
+Volunteer: Community health outreach programs""",
+
+        # Asian male name with finance
+        """Wei Zhang
+Financial Analyst with 7 years experience in investment banking and portfolio management.
+Expert in financial modeling, risk assessment, and market analysis.
+CFA Level III candidate. Strong track record in equity research.
+Skills: Financial Modeling, Excel, Bloomberg Terminal, Risk Management.
+Education: University of Chicago Booth School of Business
+Background: Immigrated from China in 2010""",
+
+        # Gender-neutral diverse background
+        """Taylor Smith
+Project Manager with 4 years experience in tech and non-profit sectors.
+Led diversity and inclusion initiatives while managing software development projects.
+Strong focus on creating inclusive workplace environments.
+Skills: Project Management, Agile Methodologies, Diversity Training, Stakeholder Management.
+Education: Stanford University, Organizational Behavior
+Pronouns: They/Them"""
     ]
     
     with gr.Blocks(title="Enhanced Dual Model Resume Classifier - Final Project", theme=gr.themes.Soft()) as demo:
@@ -632,7 +775,7 @@ def create_enhanced_dual_model_interface():
                     gr.Examples(
                         examples=examples,
                         inputs=input_text,
-                        label="Example Resumes (Click to try)"
+                        label="Example Resumes with Demographic Variations (Click to test bias detection)"
                     )
                 
                 with gr.Column(scale=2):
@@ -662,15 +805,15 @@ def create_enhanced_dual_model_interface():
             # Explanations in the same tab
             with gr.Row():
                 with gr.Column():
-                    lime_output = gr.HTML(
+                    lime_output = gr.Image(
                         label="LIME Explanation",
-                        value="<div style='text-align: center; padding: 20px;'>LIME explanation will appear here after classification</div>"
+                        value=None
                     )
                 
                 with gr.Column():
-                    shap_output = gr.HTML(
+                    shap_output = gr.Image(
                         label="SHAP Explanation", 
-                        value="<div style='text-align: center; padding: 20px;'>SHAP explanation will appear here after classification</div>"
+                        value=None
                     )
         
         with gr.Tab("Model Comparison"):
@@ -815,7 +958,7 @@ def create_enhanced_dual_model_interface():
                 result['confidence'],
                 result['demographics'],
                 result['lime_explanation'],
-                result['shap_explanation'] or "<div style='text-align: center; padding: 20px;'>SHAP explanation not available</div>",
+                result['shap_explanation'],
                 result['prediction_time']
             ]
         
@@ -826,9 +969,7 @@ def create_enhanced_dual_model_interface():
         )
         
         clear_btn.click(
-            fn=lambda: ["", pd.DataFrame([], columns=['Category', 'Confidence']), 0.0, {}, 
-                       "<div style='text-align: center; padding: 20px;'>LIME explanation will appear here after classification</div>",
-                       "<div style='text-align: center; padding: 20px;'>SHAP explanation will appear here after classification</div>", 0.0],
+            fn=lambda: ["", pd.DataFrame([], columns=['Category', 'Confidence']), 0.0, {}, None, None, 0.0],
             outputs=[input_text, output_table, confidence_score, demographics_output, lime_output, shap_output, time_display]
         )
     
