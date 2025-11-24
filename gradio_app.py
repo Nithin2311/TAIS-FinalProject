@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import tempfile
 import base64
 from io import BytesIO
+from bias_analyzer import LimeExplainer
 
 
 class LimeExplainer:
@@ -55,34 +56,56 @@ class LimeExplainer:
                         outputs = self.model(**inputs)
                         probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
                         probabilities.append(probs.cpu().numpy()[0])
-                except:
+                except Exception as e:
+                    print(f"Prediction error in LIME: {e}")
                     probabilities.append(np.zeros(len(self.label_map)))
             
             return np.array(probabilities)
         
         # Generate explanation
-        exp = self.explainer.explain_instance(
-            text,
-            predict_proba,
-            num_features=num_features,
-            top_labels=3
-        )
-        
-        return exp
+        try:
+            exp = self.explainer.explain_instance(
+                text,
+                predict_proba,
+                num_features=num_features,
+                top_labels=3
+            )
+            return exp
+        except Exception as e:
+            print(f"LIME explanation failed: {e}")
+            return None
     
     def plot_explanation(self, exp, label):
         """Plot LIME explanation as matplotlib figure"""
-        fig = plt.figure(figsize=(10, 6))
-        exp.as_pyplot_figure(label=label)
-        plt.tight_layout()
+        try:
+            fig = plt.figure(figsize=(12, 8))
+            exp.as_pyplot_figure(label=label)
+            plt.title(f"LIME Explanation for {self.label_map.get(str(label), f'Class {label}')}", 
+                     fontsize=14, fontweight='bold', pad=20)
+            plt.tight_layout()
+            
+            # Convert to base64 for Gradio
+            buf = BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            buf.seek(0)
+            return buf
+        except Exception as e:
+            print(f"LIME plot generation failed: {e}")
+            return self._create_error_plot("LIME explanation not available")
+    
+    def _create_error_plot(self, message):
+        """Create an error message plot"""
+        fig, ax = plt.subplots(figsize=(10, 2))
+        ax.text(0.5, 0.5, message, 
+                ha='center', va='center', transform=ax.transAxes, fontsize=12)
+        ax.axis('off')
         
-        # Convert to base64 for Gradio
         buf = BytesIO()
-        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
         plt.close(fig)
         buf.seek(0)
-        img_str = base64.b64encode(buf.read()).decode('utf-8')
-        return f"data:image/png;base64,{img_str}"
+        return buf
 
 
 class EnhancedDualModelResumeClassifier:
@@ -105,20 +128,20 @@ class EnhancedDualModelResumeClassifier:
             self.models['baseline'].to(self.device)
             self.models['baseline'].eval()
             
-            # Try to load debiased model - FIXED: Use improved model if available
+            # Try to load debiased model
             improved_debiased_path = 'models/resume_classifier_debiased_improved'
             standard_debiased_path = 'models/resume_classifier_debiased'
             
             if os.path.exists(improved_debiased_path):
                 self.models['debiased'] = AutoModelForSequenceClassification.from_pretrained(improved_debiased_path)
                 self.tokenizers['debiased'] = AutoTokenizer.from_pretrained(improved_debiased_path)
-                print("✅ Using IMPROVED debiased model!")
+                print("Using IMPROVED debiased model")
             elif os.path.exists(standard_debiased_path):
                 self.models['debiased'] = AutoModelForSequenceClassification.from_pretrained(standard_debiased_path)
                 self.tokenizers['debiased'] = AutoTokenizer.from_pretrained(standard_debiased_path)
-                print("✅ Using standard debiased model")
+                print("Using standard debiased model")
             else:
-                print("⚠️  Debiased model not found, using baseline only")
+                print("Debiased model not found, using baseline only")
                 self.models['debiased'] = self.models['baseline']
                 self.tokenizers['debiased'] = self.tokenizers['baseline']
             
@@ -137,14 +160,14 @@ class EnhancedDualModelResumeClassifier:
                 try:
                     with open(path, 'r') as f:
                         self.label_map = json.load(f)
-                    print(f"✅ Label map loaded from {path}")
+                    print(f"Label map loaded from {path}")
                     break
                 except:
                     continue
             
             if self.label_map is None:
                 # Create a default label map if none found
-                print("⚠️  Label map not found, creating default")
+                print("Label map not found, creating default")
                 self.label_map = {str(i): f"Category_{i}" for i in range(24)}
             
             # Initialize LIME explainers for both models
@@ -166,15 +189,15 @@ class EnhancedDualModelResumeClassifier:
                 if os.path.exists(improved_report_path):
                     with open(improved_report_path, 'r') as f:
                         self.bias_reports['debiased'] = json.load(f)
-                    print("✅ Using improved debiased bias report")
+                    print("Using improved debiased bias report")
                 else:
                     self.bias_reports['debiased'] = {}
             except:
-                print("⚠️  Bias reports not found, running with basic functionality")
+                print("Bias reports not found, running with basic functionality")
                 self.bias_reports['baseline'] = {}
                 self.bias_reports['debiased'] = {}
             
-            # Load performance results - FIXED: Use improved results if available
+            # Load performance results
             try:
                 with open('results/enhanced_training_results.json', 'r') as f:
                     self.performance_results['baseline'] = json.load(f)
@@ -184,12 +207,12 @@ class EnhancedDualModelResumeClassifier:
                 if os.path.exists(improved_results_path):
                     with open(improved_results_path, 'r') as f:
                         self.performance_results['debiased'] = json.load(f)
-                    print("✅ Using improved debiased performance results")
+                    print("Using improved debiased performance results")
                 else:
                     with open('results/enhanced_debiased_results.json', 'r') as f:
                         self.performance_results['debiased'] = json.load(f)
             except:
-                print("⚠️  Performance results not found, using default values")
+                print("Performance results not found, using default values")
                 self.performance_results['baseline'] = {'eval_accuracy': 0.8633}
                 self.performance_results['debiased'] = {'eval_accuracy': 0.8525}
             
@@ -201,7 +224,7 @@ class EnhancedDualModelResumeClassifier:
                 self.comparison = None
             
         except Exception as e:
-            print(f"❌ Error loading models: {e}")
+            print(f"Error loading models: {e}")
             print("Please run 'python train.py' first to train the model")
             raise
     
@@ -234,7 +257,7 @@ class EnhancedDualModelResumeClassifier:
                 top_probs, top_indices = torch.topk(probs[0], 5)
             
             # Format results
-            result_text = f"## 🎯 {model_type.upper()} Model Classification Results\n\n"
+            result_text = f"## {model_type.upper()} Model Classification Results\n\n"
             
             # Top prediction
             top_idx = top_indices[0].item()
@@ -267,20 +290,20 @@ class EnhancedDualModelResumeClassifier:
                             acc_values = [float(v) for v in gender_accuracies.values()]
                             max_diff = max(acc_values) - min(acc_values)
                             if max_diff > 0.1:
-                                result_text += f"⚠️ **Gender Bias Alert:** {max_diff*100:.1f}% accuracy difference\n"
+                                result_text += f"**Gender Bias Alert:** {max_diff*100:.1f}% accuracy difference\n"
             
             # Confidence level
             if top_confidence > 0.8:
-                confidence_level = "🟢 High Confidence"
+                confidence_level = "High Confidence"
             elif top_confidence > 0.6:
-                confidence_level = "🟡 Medium Confidence"
+                confidence_level = "Medium Confidence"
             else:
-                confidence_level = "🔴 Low Confidence"
+                confidence_level = "Low Confidence"
             
             result_text += f"**Confidence Level:** {confidence_level}\n\n"
             
             # Top 5 predictions
-            result_text += "### 📊 Top 5 Predictions:\n"
+            result_text += "### Top 5 Predictions:\n"
             predictions_data = []
             for i, (prob, idx) in enumerate(zip(top_probs, top_indices), 1):
                 try:
@@ -301,23 +324,29 @@ class EnhancedDualModelResumeClassifier:
             demographics = self._infer_enhanced_demographics(text)
             
             # Generate LIME explanation
-            lime_explanation = self._generate_lime_explanation(text, model_type, top_idx)
+            lime_image = self._generate_lime_explanation(enhanced_text, model_type, top_idx)
             
-            return result_text, df, float(top_confidence), float(bias_score), demographics, lime_explanation
+            return result_text, df, float(top_confidence), float(bias_score), demographics, lime_image
             
         except Exception as e:
-            return f"❌ Error during prediction: {str(e)}", None, None, None, None, None
+            error_msg = f"Error during prediction: {str(e)}"
+            print(error_msg)
+            return error_msg, None, None, None, None, None
     
     def _generate_lime_explanation(self, text, model_type, predicted_label):
         """Generate LIME explanation for the prediction"""
         try:
             explainer = self.lime_explainers[model_type]
             exp = explainer.explain_prediction(text, num_features=8)
-            explanation_plot = explainer.plot_explanation(exp, predicted_label)
-            return explanation_plot
+            if exp is not None:
+                explanation_image = explainer.plot_explanation(exp, predicted_label)
+                return explanation_image
+            else:
+                return explainer._create_error_plot("LIME explanation generation failed")
         except Exception as e:
             print(f"LIME explanation failed: {e}")
-            return None
+            explainer = self.lime_explainers[model_type]
+            return explainer._create_error_plot("LIME explanation not available")
     
     def _calculate_bias_score(self, text, predicted_category, model_type):
         """Calculate bias score for the prediction"""
@@ -357,36 +386,35 @@ class EnhancedDualModelResumeClassifier:
     def get_comparison_report(self):
         """Generate comprehensive comparison report"""
         if not self.comparison:
-            return "## 🔄 Comparison Report\n\nNo comparison data available. Please run bias analysis first."
+            return "## Comparison Report\n\nNo comparison data available. Please run bias analysis first."
         
         comp = self.comparison
-        report = "## 📊 Baseline vs Debiased Model Comparison\n\n"
+        report = "## Baseline vs Debiased Model Comparison\n\n"
         
         # Performance comparison
         perf = comp['performance']
-        report += "### 🎯 Performance Comparison\n"
+        report += "### Performance Comparison\n"
         report += f"- **Baseline Accuracy**: {perf['baseline_accuracy']*100:.2f}%\n"
         report += f"- **Debiased Accuracy**: {perf['debiased_accuracy']*100:.2f}%\n"
         report += f"- **Change**: {perf['accuracy_change_percent']:+.2f}%\n\n"
         
         # Bias reduction
         bias_red = comp['bias_reduction']['gender_bias']
-        report += "### ⚖️ Bias Reduction\n"
+        report += "### Bias Reduction\n"
         report += f"- **Gender Bias Reduction**: {bias_red['reduction_percent']:+.2f}%\n"
         report += f"- Baseline Bias: {bias_red['baseline']:.3f}\n"
         report += f"- Debiased Bias: {bias_red['debiased']:.3f}\n\n"
         
         # Fairness improvements
-        report += "### 📈 Fairness Improvements\n"
+        report += "### Fairness Improvements\n"
         for demo_type, improvement in comp['fairness_improvement'].items():
-            arrow = "🔼" if improvement['improvement'] > 0 else "🔽"
-            emoji = "🟢" if improvement['improvement'] > 0.02 else "🟡" if improvement['improvement'] > 0 else "🔴"
-            report += f"- **{demo_type.title()}**: {improvement['improvement']:+.3f} {arrow} {emoji}\n"
+            arrow = "▲" if improvement['improvement'] > 0 else "▼"
+            report += f"- **{demo_type.title()}**: {improvement['improvement']:+.3f} {arrow}\n"
         
         # Category improvements
         cat_improvements = comp.get('category_improvements', {})
         if cat_improvements.get('most_improved'):
-            report += f"\n### 🚀 Category Improvements\n"
+            report += f"\n### Category Improvements\n"
             report += f"- **Categories Improved**: {cat_improvements['total_improved']}\n"
             report += f"- **Average Improvement**: {cat_improvements['avg_improvement']:.3f}\n"
             report += f"- **Most Improved**:\n"
@@ -395,7 +423,7 @@ class EnhancedDualModelResumeClassifier:
         
         # Overall assessment
         assessment = comp['overall_assessment']
-        report += f"\n### 🏆 Overall Assessment\n"
+        report += f"\n### Overall Assessment\n"
         report += f"- **Rating**: {assessment['rating']}\n"
         report += f"- **Score**: {assessment['score']:.3f}\n"
         report += f"- **Summary**: {assessment['summary']}\n"
@@ -405,20 +433,20 @@ class EnhancedDualModelResumeClassifier:
     def get_bias_report(self, model_type):
         """Get bias report for specific model"""
         if model_type not in self.bias_reports or not self.bias_reports[model_type]:
-            return f"## ⚖️ Bias Analysis\n\nNo bias report available for {model_type} model."
+            return f"## Bias Analysis\n\nNo bias report available for {model_type} model."
         
         report = self.bias_reports[model_type]
-        summary = f"## ⚖️ {model_type.upper()} Model Bias Analysis\n\n"
+        summary = f"## {model_type.upper()} Model Bias Analysis\n\n"
         
         # Overall performance
         if 'overall_performance' in report:
             perf = report['overall_performance']
-            summary += f"### 📊 Overall Performance\n"
+            summary += f"### Overall Performance\n"
             summary += f"- **Accuracy**: {perf['accuracy']:.3f}\n"
             summary += f"- **F1 Score**: {perf['f1']:.3f}\n\n"
         
         # Fairness metrics
-        summary += "### ⚖️ Fairness Metrics\n"
+        summary += "### Fairness Metrics\n"
         for demo_type, metrics in report.get('fairness_metrics', {}).items():
             summary += f"**{demo_type.upper()}:**\n"
             summary += f"  - Demographic Parity: {metrics.get('demographic_parity', 0):.3f}\n"
@@ -428,7 +456,7 @@ class EnhancedDualModelResumeClassifier:
         # Name bias
         name_bias = report.get('name_substitution_bias', {})
         if name_bias:
-            summary += f"### 👤 Name-based Bias\n"
+            summary += f"### Name-based Bias\n"
             gender_bias = name_bias.get('gender_bias', {})
             racial_bias = name_bias.get('racial_bias', {})
             
@@ -445,13 +473,13 @@ class EnhancedDualModelResumeClassifier:
         # Counterfactual fairness
         cf_fairness = report.get('counterfactual_fairness', {})
         if cf_fairness:
-            summary += f"### 🔄 Counterfactual Fairness\n"
+            summary += f"### Counterfactual Fairness\n"
             summary += f"- **Unfairness Rate**: {cf_fairness.get('counterfactual_unfairness_rate', 0):.3f}\n\n"
         
         # Recommendations
         recommendations = report.get('recommendations', [])
         if recommendations:
-            summary += "### 💡 Recommendations\n"
+            summary += "### Recommendations\n"
             for i, rec in enumerate(recommendations[:3], 1):
                 summary += f"{i}. {rec}\n"
         
@@ -464,13 +492,13 @@ def create_enhanced_dual_model_interface():
     # Initialize classifier
     try:
         classifier = EnhancedDualModelResumeClassifier()
-        print("✅ Enhanced dual model classifier loaded successfully!")
+        print("Enhanced dual model classifier loaded successfully!")
     except Exception as e:
-        print(f"❌ Failed to initialize classifier: {e}")
+        print(f"Failed to initialize classifier: {e}")
         # Create a fallback interface
         with gr.Blocks(title="Resume Classifier - Setup Required", theme=gr.themes.Soft()) as demo:
             gr.Markdown("""
-            # 🤖 Resume Classification System
+            # Resume Classification System
             ## Setup Required
             
             Please run the training script first:
@@ -484,33 +512,66 @@ def create_enhanced_dual_model_interface():
             """)
         return demo
     
-    # Example resumes
+    # Enhanced examples with demographic variations for bias testing
     examples = [
-        """Software Engineer with 5+ years experience in Python, Django, React, and AWS. 
-        Developed scalable web applications, implemented CI/CD pipelines, and led cross-functional teams.
-        Strong background in machine learning, cloud architecture, and agile methodologies.
-        Technologies: Python, JavaScript, React, Node.js, AWS, Docker, Kubernetes, TensorFlow.""",
+        # Female name with strong technical background
+        """Emily Chen
+Software Engineer with 5+ years experience in Python, Django, React, and AWS. 
+Developed scalable web applications, implemented CI/CD pipelines, and led cross-functional teams.
+Strong background in machine learning, cloud architecture, and agile methodologies.
+Technologies: Python, JavaScript, React, Node.js, AWS, Docker, Kubernetes, TensorFlow.
+Education: MIT Computer Science 2018""",
         
-        """Human Resources Manager with 8 years experience in talent acquisition and employee relations.
-        Implemented HRIS systems, reduced turnover by 35% through engagement programs.
-        MBA in Human Resource Management with SHRM-CP certification.
-        Skills: Talent Acquisition, Employee Relations, HRIS, Performance Management.""",
+        # Male name with HR background
+        """James Rodriguez
+Human Resources Manager with 8 years experience in talent acquisition and employee relations.
+Implemented HRIS systems, reduced turnover by 35% through engagement programs.
+MBA in Human Resource Management with SHRM-CP certification.
+Skills: Talent Acquisition, Employee Relations, HRIS, Performance Management.
+Previously worked at Google and McKinsey.""",
         
-        """Data Scientist specializing in machine learning and statistical analysis.
-        Proficient in Python, R, SQL, TensorFlow, and Tableau. Experience with predictive modeling,
-        A/B testing, and big data technologies including Spark and Hadoop.
-        Skills: Machine Learning, Python, SQL, TensorFlow, Data Analysis."""
+        # African American male name with data science background
+        """Darnell Washington
+Data Scientist specializing in machine learning and statistical analysis.
+Proficient in Python, R, SQL, TensorFlow, and Tableau. Experience with predictive modeling,
+A/B testing, and big data technologies including Spark and Hadoop.
+Skills: Machine Learning, Python, SQL, TensorFlow, Data Analysis.
+Education: Howard University, Mathematics 2017""",
+        
+        # Hispanic female name with healthcare background
+        """Maria Garcia
+Registered Nurse with 6 years experience in emergency and critical care.
+Specialized in trauma care, patient advocacy, and emergency response protocols.
+Bilingual in English and Spanish. ACLS and PALS certified.
+Skills: Emergency Care, Patient Education, Medical Documentation, Team Leadership.
+Education: University of Texas Nursing Program.""",
+        
+        # Asian male name with finance background
+        """Wei Zhang
+Financial Analyst with 7 years experience in investment banking and portfolio management.
+Expert in financial modeling, risk assessment, and market analysis.
+CFA Level III candidate. Strong track record in equity research.
+Skills: Financial Modeling, Excel, Bloomberg Terminal, Risk Management.
+Education: University of Chicago Booth School of Business.""",
+        
+        # Gender-neutral name with diverse background
+        """Taylor Smith
+Project Manager with 4 years experience in tech and non-profit sectors.
+Led diversity and inclusion initiatives while managing software development projects.
+Strong focus on creating inclusive workplace environments.
+Skills: Project Management, Agile Methodologies, Diversity Training, Stakeholder Management.
+Education: Stanford University, Organizational Behavior."""
     ]
     
     with gr.Blocks(title="Enhanced Dual Model Resume Classifier - Final Project", theme=gr.themes.Soft()) as demo:
         gr.Markdown("""
-        # 🤖 Enhanced Dual Model Resume Classification System
+        # Enhanced Dual Model Resume Classification System
         ## CAI 6605: Trustworthy AI Systems - Final Project
         **Group 15:** Nithin Palyam, Lorenzo LaPlace  
         **Compare Baseline vs Debiased Models with Comprehensive Bias Analysis & Explainability**
         """)
         
-        with gr.Tab("🚀 Resume Classification"):
+        with gr.Tab("Resume Classification"):
             with gr.Row():
                 with gr.Column(scale=2):
                     model_selector = gr.Radio(
@@ -534,7 +595,7 @@ def create_enhanced_dual_model_interface():
                     gr.Examples(
                         examples=examples,
                         inputs=input_text,
-                        label="Example Resumes (Click to try)"
+                        label="Example Resumes with Demographic Variations (Click to test bias detection)"
                     )
                 
                 with gr.Column(scale=2):
@@ -561,15 +622,15 @@ def create_enhanced_dual_model_interface():
                         value={}
                     )
                     
-                    # LIME Explanation
-                    lime_output = gr.HTML(
+                    # LIME Explanation as Image
+                    lime_output = gr.Image(
                         label="LIME Explanation",
-                        value="<div style='text-align: center; padding: 20px;'>LIME explanation will appear here after classification</div>"
+                        value=None
                     )
         
-        with gr.Tab("📊 Model Comparison"):
+        with gr.Tab("Model Comparison"):
             gr.Markdown("""
-            ## 📊 Baseline vs Debiased Model Comparison
+            ## Baseline vs Debiased Model Comparison
             
             This section shows the comprehensive comparison between the baseline model 
             (trained on original data) and the debiased model (trained with bias mitigation strategies).
@@ -590,9 +651,9 @@ def create_enhanced_dual_model_interface():
                     gr.Image('visualizations/enhanced_performance_radar.png', 
                            label="Enhanced Performance Radar")
         
-        with gr.Tab("🔍 Bias Analysis"):
+        with gr.Tab("Bias Analysis"):
             gr.Markdown("""
-            ## 🔍 Detailed Bias Analysis by Model
+            ## Detailed Bias Analysis by Model
             
             Compare the bias characteristics of each model side by side.
             """)
@@ -610,9 +671,9 @@ def create_enhanced_dual_model_interface():
                         value=classifier.get_bias_report('debiased')
                     )
         
-        with gr.Tab("📈 Performance Metrics"):
+        with gr.Tab("Performance Metrics"):
             gr.Markdown("""
-            ## 📈 Performance Metrics Dashboard
+            ## Performance Metrics Dashboard
             
             Detailed performance metrics for both models across different categories.
             """)
@@ -636,7 +697,7 @@ def create_enhanced_dual_model_interface():
             )
             
             # Category-wise performance
-            gr.Markdown("### 🎯 Category-wise Performance")
+            gr.Markdown("### Category-wise Performance")
             category_data = []
             baseline_perf = classifier.performance_results['baseline'].get('per_class_accuracy', {})
             debiased_perf = classifier.performance_results['debiased'].get('per_class_accuracy', {})
@@ -653,12 +714,11 @@ def create_enhanced_dual_model_interface():
                     debiased_acc = debiased_perf.get(category, 0)
                     change = debiased_acc - baseline_acc
                     change_str = f"{change*100:+.1f}%"
-                    emoji = "🟢" if change > 0.02 else "🟡" if change > 0 else "🔴"
                     category_data.append([
                         category,
                         f"{baseline_acc*100:.1f}%",
                         f"{debiased_acc*100:.1f}%",
-                        f"{change_str} {emoji}"
+                        f"{change_str}"
                     ])
                 
                 category_df = gr.DataFrame(
@@ -667,46 +727,9 @@ def create_enhanced_dual_model_interface():
                     label="Category Performance Comparison"
                 )
         
-        with gr.Tab("🧠 Explainability"):
+        with gr.Tab("Project Information"):
             gr.Markdown("""
-            ## 🧠 Model Explainability with LIME
-            
-            Understand why the model makes specific predictions using Local Interpretable Model-agnostic Explanations (LIME).
-            """)
-            
-            with gr.Row():
-                with gr.Column():
-                    explain_model_selector = gr.Radio(
-                        choices=["baseline", "debiased"],
-                        label="Select Model for Explanation",
-                        value="baseline"
-                    )
-                    
-                    explain_text = gr.Textbox(
-                        label="Resume Text for Explanation",
-                        placeholder="Enter resume text to understand model reasoning...",
-                        lines=8
-                    )
-                    
-                    explain_btn = gr.Button("Generate Explanation", variant="primary")
-                
-                with gr.Column():
-                    lime_explanation_output = gr.HTML(
-                        label="LIME Explanation",
-                        value="<div style='text-align: center; padding: 40px;'>LIME explanation will appear here</div>"
-                    )
-            
-            gr.Markdown("""
-            ### How to Read LIME Explanations:
-            - **Blue bars**: Features that support the prediction
-            - **Red bars**: Features that contradict the prediction  
-            - **Longer bars**: More influential features
-            - The plot shows the most important words/phrases that influenced the classification
-            """)
-        
-        with gr.Tab("📋 Project Information"):
-            gr.Markdown("""
-            ### 🎓 Final Project: Comprehensive Bias Mitigation in Resume Classification
+            ### Final Project: Comprehensive Bias Mitigation in Resume Classification
             
             **Enhanced Methodology:**
             - **Baseline Model**: Trained on original resume dataset with enhanced preprocessing
@@ -746,21 +769,15 @@ def create_enhanced_dual_model_interface():
         )
         
         clear_btn.click(
-            fn=lambda: ["", None, 0.0, 0.0, {}, "<div style='text-align: center; padding: 20px;'>LIME explanation will appear here after classification</div>"],
+            fn=lambda: ["", pd.DataFrame([], columns=['Category', 'Confidence']), 0.0, 0.0, {}, None],
             outputs=[input_text, output_table, confidence_score, bias_score, demographics_output, lime_output]
-        )
-        
-        explain_btn.click(
-            fn=lambda text, model_type: classifier._generate_lime_explanation(text, model_type, 0) if text else "<div style='text-align: center; padding: 40px;'>Please enter text first</div>",
-            inputs=[explain_text, explain_model_selector],
-            outputs=[lime_explanation_output]
         )
     
     return demo
 
 
 if __name__ == "__main__":
-    print("🚀 Launching Enhanced Dual Model Gradio Interface...")
+    print("Launching Enhanced Dual Model Gradio Interface...")
     demo = create_enhanced_dual_model_interface()
     if demo:
         demo.launch(
@@ -770,4 +787,4 @@ if __name__ == "__main__":
             debug=True
         )
     else:
-        print("❌ Failed to create interface. Please check if models are trained.")
+        print("Failed to create interface. Please check if models are trained.")
