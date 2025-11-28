@@ -33,12 +33,11 @@ class LimeExplainer:
         self.label_map = label_map
         self.device = device
         
-        # Initialize LIME explainer with better configuration
         self.explainer = lime.lime_text.LimeTextExplainer(
             class_names=list(label_map.values()),
             verbose=False,
             random_state=42,
-            bow=False,  # Use word embeddings instead of bag of words
+            bow=False,
             split_expression=lambda x: x.split()
         )
     
@@ -55,7 +54,7 @@ class LimeExplainer:
                         text,
                         truncation=True,
                         padding=True,
-                        max_length=256,  # Reduced for stability
+                        max_length=256,
                         return_tensors='pt'
                     ).to(self.device)
                     
@@ -64,14 +63,11 @@ class LimeExplainer:
                         probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
                         probabilities.append(probs.cpu().numpy()[0])
                 except Exception as e:
-                    # Return uniform probabilities on error
                     probabilities.append(np.ones(len(self.label_map)) / len(self.label_map))
             
             return np.array(probabilities)
         
-        # Generate explanation with robust error handling
         try:
-            # Ensure text is string and has sufficient length
             text_str = str(text)
             if len(text_str.split()) < 3:
                 return None
@@ -80,7 +76,7 @@ class LimeExplainer:
                 text_str,
                 predict_proba,
                 num_features=min(num_features, len(text_str.split())),
-                num_samples=100,  # Reduced for speed
+                num_samples=100,
                 top_labels=1
             )
             return exp
@@ -96,19 +92,15 @@ class LimeExplainer:
                 
             fig, ax = plt.subplots(figsize=(12, 8))
             
-            # Get explanation data
             exp_list = exp.as_list(label=label)
             
             if not exp_list:
                 return self._create_error_plot("No features to explain")
             
-            # Sort by absolute importance
             exp_list.sort(key=lambda x: abs(x[1]), reverse=True)
             
-            # Take top features
             top_features = exp_list[:10]
             
-            # Create horizontal bar plot
             features = [x[0] for x in top_features]
             weights = [x[1] for x in top_features]
             
@@ -122,7 +114,6 @@ class LimeExplainer:
             ax.set_title(f'LIME Explanation for {self.label_map.get(str(label), f"Class {label}")}', 
                         fontsize=14, fontweight='bold', pad=20)
             
-            # Add value annotations
             for i, v in enumerate(weights):
                 ax.text(v + (0.01 if v >= 0 else -0.01), i, f'{v:.3f}', 
                        color='black', fontsize=9, va='center',
@@ -130,7 +121,6 @@ class LimeExplainer:
             
             plt.tight_layout()
             
-            # Convert to bytes
             buf = plt.BytesIO()
             plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
             plt.close(fig)
@@ -160,7 +150,6 @@ class EnhancedDemographicInference:
     """Enhanced demographic inference from resume text"""
     
     def __init__(self):
-        # Enhanced gender inference with more patterns
         self.gender_patterns = {
             'male': [
                 r'\bhe\b', r'\bhim\b', r'\bhis\b', r'\bmale\b', r'\bman\b', r'\bmen\b',
@@ -174,7 +163,6 @@ class EnhancedDemographicInference:
             ]
         }
         
-        # Educational privilege indicators
         self.privilege_indicators = {
             'elite_universities': [
                 'harvard', 'stanford', 'mit', 'princeton', 'yale', 'columbia',
@@ -188,14 +176,12 @@ class EnhancedDemographicInference:
             ]
         }
         
-        # Age indicators
         self.age_indicators = {
             'experience_years': [r'(\d+)\s+years', r'(\d+)\+ years', r'(\d+)-(\d+) years'],
             'graduation_years': [r'class of (\d{4})', r'graduated (\d{4})', r'\b(\d{4})\s*-\s*(\d{4})'],
             'age_phrases': ['recent graduate', 'entry level', 'junior', 'senior', 'experienced', 'veteran']
         }
         
-        # Disability indicators
         self.disability_indicators = [
             'disability', 'disabled', 'handicap', 'special needs', 'accessibility',
             'accommodation', 'able-bodied', 'differently abled', 'inclusion',
@@ -266,7 +252,6 @@ class EnhancedDemographicInference:
         """Infer approximate age group from text patterns"""
         text_lower = text.lower()
         
-        # Look for years of experience
         experience_match = re.search(r'(\d+)\s+years', text_lower)
         if experience_match:
             years_exp = int(experience_match.group(1))
@@ -277,11 +262,9 @@ class EnhancedDemographicInference:
             else:
                 return 'senior'
         
-        # Look for graduation years
         graduation_match = re.search(r'(?:class of|graduated)\s+(\d{4})', text_lower)
         if graduation_match:
             grad_year = int(graduation_match.group(1))
-            # Rough estimate: assume graduation at age 22
             estimated_age = 2024 - grad_year + 22
             if estimated_age < 30:
                 return 'young'
@@ -290,7 +273,6 @@ class EnhancedDemographicInference:
             else:
                 return 'senior'
         
-        # Look for age-related phrases
         if any(phrase in text_lower for phrase in ['recent graduate', 'entry level', 'new grad']):
             return 'early_career'
         elif any(phrase in text_lower for phrase in ['senior', 'veteran', 'experienced']):
@@ -327,8 +309,7 @@ class EnhancedFairnessMetrics:
         for group in groups:
             group_mask = protected_attr == group
             if np.sum(group_mask) > 0:
-                # For multi-class, use overall positive rate
-                positive_rate = np.mean(y_pred[group_mask] != -1)  # All predictions are "positive" in some class
+                positive_rate = np.mean(y_pred[group_mask] != -1)
                 group_positive_rates.append(positive_rate)
         
         return max(group_positive_rates) - min(group_positive_rates) if group_positive_rates else 0
@@ -417,7 +398,6 @@ class EnhancedFairnessMetrics:
         """Analyze fairness across intersectional groups"""
         intersectional_groups = {}
         
-        # Create intersectional groups
         unique_combinations = set(zip(*protected_attrs.values()))
         
         for combo in unique_combinations:
@@ -449,7 +429,6 @@ class EnhancedNameSubstitutionExperiment:
         self.model = model
         self.device = device
         
-        # Expanded name lists with more diversity
         self.male_names = ['James', 'Robert', 'John', 'Michael', 'David', 'William', 
                           'Richard', 'Joseph', 'Thomas', 'Christopher', 'Daniel', 'Matthew',
                           'Anthony', 'Mark', 'Donald', 'Steven', 'Paul', 'Andrew', 'Joshua']
@@ -457,7 +436,6 @@ class EnhancedNameSubstitutionExperiment:
                             'Barbara', 'Susan', 'Jessica', 'Sarah', 'Karen', 'Nancy', 'Lisa',
                             'Betty', 'Margaret', 'Sandra', 'Ashley', 'Dorothy', 'Kimberly']
         
-        # Racially associated names (based on common associations from research)
         self.white_names = ['Emily', 'Anne', 'Jill', 'Allison', 'Laurie', 'Neil', 
                            'Geoffrey', 'Brett', 'Greg', 'Matthew', 'Katie', 'Megan']
         self.black_names = ['Lakisha', 'Latoya', 'Tamika', 'Imani', 'Ebony', 'Darnell',
@@ -488,22 +466,18 @@ class EnhancedNameSubstitutionExperiment:
         
         for i, (text, label) in enumerate(zip(test_texts[:num_samples], test_labels[:num_samples])):
             try:
-                # Test with male name
                 male_text = f"Candidate: {np.random.choice(self.male_names)} {text}"
                 male_pred, male_conf = self._predict_single(male_text)
                 
-                # Test with female name
                 female_text = f"Candidate: {np.random.choice(self.female_names)} {text}"
                 female_pred, female_conf = self._predict_single(female_text)
                 
                 male_predictions.append(male_pred)
                 female_predictions.append(female_pred)
                 
-                # Calculate bias score based on prediction changes
                 bias_score = 1 if male_pred != female_pred else 0
                 bias_scores.append(bias_score)
                 
-                # Calculate confidence change
                 conf_change = abs(male_conf - female_conf)
                 confidence_changes.append(conf_change)
                 
@@ -542,7 +516,6 @@ class EnhancedNameSubstitutionExperiment:
                     predictions[group] = pred
                     group_predictions[group].append(pred)
                 
-                # Calculate pairwise bias
                 groups = list(racial_groups.keys())
                 for j, group1 in enumerate(groups):
                     for k, group2 in enumerate(groups):
@@ -553,7 +526,6 @@ class EnhancedNameSubstitutionExperiment:
                 print(f"Error in racial bias experiment: {e}")
                 continue
         
-        # Calculate average bias between groups
         total_comparisons = num_samples * (len(racial_groups) * (len(racial_groups) - 1))
         average_bias = np.sum(bias_matrix) / total_comparisons if total_comparisons > 0 else 0
         
@@ -568,7 +540,6 @@ class EnhancedNameSubstitutionExperiment:
         """Measure intersectional bias (gender + race)"""
         intersectional_results = {}
         
-        # Define intersectional groups
         intersectional_groups = [
             ('white', 'male'), ('white', 'female'),
             ('black', 'male'), ('black', 'female'), 
@@ -584,9 +555,9 @@ class EnhancedNameSubstitutionExperiment:
                 group_key = f"{race}_{gender}"
                 predictions = []
                 
-                for i, (text, label) in enumerate(zip(test_texts[:20], test_labels[:20])):  # Smaller sample for intersectional
+                for i, (text, label) in enumerate(zip(test_texts[:20], test_labels[:20])):
                     try:
-                        name = np.random.choice([n for n in gender_names if n in race_names or True])  # Simplified
+                        name = np.random.choice([n for n in gender_names if n in race_names or True])
                         group_text = f"Candidate: {name} {text}"
                         pred, conf = self._predict_single(group_text)
                         predictions.append(pred)
@@ -639,27 +610,21 @@ class EnhancedBiasAnalyzer:
         """Run comprehensive enhanced bias analysis"""
         print("ENHANCED COMPREHENSIVE BIAS ANALYSIS")
         
-        # Convert to numpy arrays
         test_labels = np.array(test_labels)
         test_predictions = np.array(test_predictions)
         
-        # Enhanced demographic inference with more attributes
         print("Enhanced demographic inference...")
         demographics = self._enhanced_infer_demographics(test_texts)
         
-        # Calculate comprehensive fairness metrics
         print("Calculating enhanced fairness metrics...")
         fairness_results = self._calculate_enhanced_fairness_metrics(test_labels, test_predictions, demographics)
         
-        # Enhanced category-level bias analysis
         print("Enhanced category-level bias analysis...")
         category_bias = self._enhanced_analyze_category_bias(test_labels, test_predictions, demographics)
         
-        # Intersectional bias analysis
         print("Intersectional bias analysis...")
         intersectional_results = self._analyze_intersectional_bias(test_labels, test_predictions, demographics)
         
-        # Comprehensive name substitution experiments
         print("Running comprehensive name substitution experiments...")
         try:
             name_bias_results = self.name_experiment.run_comprehensive_bias_experiment(test_texts, test_labels, num_samples=50)
@@ -671,11 +636,9 @@ class EnhancedBiasAnalyzer:
                 'intersectional_bias': {}
             }
         
-        # Counterfactual fairness analysis
         print("Counterfactual fairness analysis...")
         counterfactual_results = self._analyze_counterfactual_fairness(test_texts, test_labels)
         
-        # Generate enhanced comprehensive report
         report = self._generate_enhanced_bias_report(
             fairness_results, category_bias, name_bias_results, 
             intersectional_results, counterfactual_results,
@@ -709,7 +672,6 @@ class EnhancedBiasAnalyzer:
                 self.demographic_inference.infer_disability_status(text)
             )
         
-        # Print demographic distribution
         print("\nEnhanced Demographic Distribution:")
         for demo_type, values in demographics.items():
             dist = Counter(values)
@@ -724,7 +686,6 @@ class EnhancedBiasAnalyzer:
         for demo_type, demo_values in demographics.items():
             print(f"  Calculating {demo_type} fairness...")
             
-            # Convert to numerical for metric calculation
             demo_encoder = LabelEncoder()
             demo_encoded = demo_encoder.fit_transform(demo_values)
             
@@ -754,11 +715,10 @@ class EnhancedBiasAnalyzer:
         
         for category in range(len(self.label_map)):
             category_mask = y_true == category
-            if np.sum(category_mask) > 5:  # Only analyze categories with sufficient samples
+            if np.sum(category_mask) > 5:
                 try:
                     category_accuracy = accuracy_score(y_true[category_mask], y_pred[category_mask])
                     
-                    # Enhanced demographic analysis
                     demo_analysis = {}
                     for demo_type, demo_values in demographics.items():
                         demo_encoder = LabelEncoder()
@@ -770,7 +730,7 @@ class EnhancedBiasAnalyzer:
                         for group in groups:
                             group_mask = np.array(demo_values) == group
                             combined_mask = category_mask & group_mask
-                            if np.sum(combined_mask) > 2:  # Minimum samples per group
+                            if np.sum(combined_mask) > 2:
                                 try:
                                     group_accuracy = accuracy_score(
                                         y_true[combined_mask], 
@@ -806,7 +766,6 @@ class EnhancedBiasAnalyzer:
         """Analyze bias across intersectional groups"""
         print("  Performing intersectional bias analysis...")
         
-        # Use gender and educational privilege for intersectional analysis
         protected_attrs = {
             'gender': demographics['gender'],
             'privilege': demographics['educational_privilege']
@@ -826,10 +785,8 @@ class EnhancedBiasAnalyzer:
         
         for i, (text, label) in enumerate(zip(test_texts[:num_samples], test_labels[:num_samples])):
             try:
-                # Original prediction
                 orig_pred, orig_conf = self._predict_single_text(text)
                 
-                # Create counterfactuals by modifying gender indicators
                 gender_modified = self._modify_gender_indicators(text)
                 cf_pred, cf_conf = self._predict_single_text(gender_modified)
                 
@@ -851,7 +808,6 @@ class EnhancedBiasAnalyzer:
         """Modify gender indicators in text for counterfactual analysis"""
         modified_text = text.lower()
         
-        # Replace male indicators with female and vice versa
         male_to_female = {
             ' he ': ' she ', ' him ': ' her ', ' his ': ' her ', ' male ': ' female ',
             ' man ': ' woman ', ' men ': ' women ', ' mr. ': ' ms. ', ' mister ': ' miss '
@@ -917,7 +873,6 @@ class EnhancedBiasAnalyzer:
             )
         }
         
-        # Enhanced summary
         self._print_enhanced_bias_summary(report)
         
         return report
@@ -945,7 +900,6 @@ class EnhancedBiasAnalyzer:
         """Generate enhanced actionable recommendations"""
         recommendations = []
         
-        # Analyze fairness metrics
         high_bias_threshold = 0.1
         medium_bias_threshold = 0.05
         
@@ -970,7 +924,6 @@ class EnhancedBiasAnalyzer:
                     f"Implement adversarial debiasing and threshold optimization."
                 )
         
-        # Name bias recommendations
         gender_bias = name_bias_results.get('gender_bias', {}).get('average_bias', 0)
         racial_bias = name_bias_results.get('racial_bias', {}).get('average_bias', 0)
         
@@ -986,7 +939,6 @@ class EnhancedBiasAnalyzer:
                 f"Implement comprehensive debiasing pipeline and regular audits."
             )
         
-        # Category-specific recommendations
         high_bias_categories = []
         for category, data in category_bias.items():
             bias_score = data.get('bias_score', 0)
@@ -1003,7 +955,6 @@ class EnhancedBiasAnalyzer:
                 f"Focus debiasing and data augmentation on this category."
             )
         
-        # Intersectional bias recommendations
         if intersectional_results:
             worst_intersectional = min(intersectional_results.items(), 
                                      key=lambda x: x[1].get('accuracy', 1))
@@ -1014,7 +965,6 @@ class EnhancedBiasAnalyzer:
                     f"Implement intersectional debiasing strategies."
                 )
         
-        # Add general recommendations if no specific issues found
         if not recommendations:
             recommendations = [
                 "System shows generally fair performance. Continue monitoring.",
@@ -1022,7 +972,7 @@ class EnhancedBiasAnalyzer:
                 "Consider proactive debiasing for continuous improvement."
             ]
         
-        return recommendations[:8]  # Return top 8 recommendations
+        return recommendations[:8]
     
     def _print_enhanced_bias_summary(self, report):
         """Print enhanced comprehensive bias analysis summary"""
@@ -1030,13 +980,11 @@ class EnhancedBiasAnalyzer:
         print("ENHANCED BIAS ANALYSIS SUMMARY")
         print("=" * 60)
         
-        # Overall performance
         perf = report['overall_performance']
         print(f"Overall Performance:")
         print(f"  Accuracy: {perf['accuracy']:.3f}")
         print(f"  F1 Score: {perf['f1']:.3f}")
         
-        # Fairness metrics
         print(f"\nFAIRNESS METRICS:")
         for demo_type, metrics in report['fairness_metrics'].items():
             print(f"  {demo_type.upper():20s} | "
@@ -1044,17 +992,14 @@ class EnhancedBiasAnalyzer:
                   f"EqOpp: {metrics['equal_opportunity']:.3f} | "
                   f"AccEq: {metrics['accuracy_equality']:.3f}")
         
-        # Name bias
         name_bias = report['name_substitution_bias']
         print(f"\nNAME-BASED BIAS:")
         print(f"  Gender Bias: {name_bias['gender_bias']['average_bias']:.3f}")
         print(f"  Racial Bias: {name_bias['racial_bias']['average_bias']:.3f}")
         
-        # Counterfactual fairness
         cf_fairness = report['counterfactual_fairness']
         print(f"  Counterfactual Unfairness: {cf_fairness['counterfactual_unfairness_rate']:.3f}")
         
-        # Worst categories by bias
         category_bias = report['category_bias_analysis']
         high_bias_categories = sorted(
             [(cat, data['bias_score']) for cat, data in category_bias.items() if data['bias_score'] > 0.1],
@@ -1067,7 +1012,6 @@ class EnhancedBiasAnalyzer:
             for cat, bias in high_bias_categories:
                 print(f"  {cat}: {bias:.3f}")
         
-        # Recommendations
         print(f"\nTOP RECOMMENDATIONS:")
         for i, rec in enumerate(report['recommendations'][:3], 1):
             print(f"  {i}. {rec}")
@@ -1099,12 +1043,10 @@ class EnhancedBiasVisualization:
                 axes[idx].set_ylabel('Disparity Score', fontsize=12)
                 axes[idx].tick_params(axis='x', rotation=45)
                 
-                # Add threshold lines and annotations
                 axes[idx].axhline(y=0.1, color='red', linestyle='--', alpha=0.7, label='High Bias Threshold')
                 axes[idx].axhline(y=0.05, color='orange', linestyle='--', alpha=0.7, label='Medium Bias Threshold')
                 axes[idx].legend()
                 
-                # Add value annotations on bars
                 for bar, value in zip(bars, values):
                     height = bar.get_height()
                     axes[idx].text(bar.get_x() + bar.get_width()/2., height,
@@ -1127,7 +1069,6 @@ class EnhancedBiasVisualization:
             accuracies = [cat_data['overall_accuracy'] for cat_data in category_bias.values()]
             sample_counts = [cat_data['sample_count'] for cat_data in category_bias.values()]
             
-            # Calculate bias scores for each category
             bias_scores = []
             for cat_data in category_bias.values():
                 max_bias = 0
@@ -1141,27 +1082,23 @@ class EnhancedBiasVisualization:
             
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10))
             
-            # Plot 1: Accuracy vs Sample Count with bias coloring
             scatter = ax1.scatter(sample_counts, accuracies, c=bias_scores, cmap='Reds', s=100, alpha=0.7)
             ax1.set_xlabel('Sample Count')
             ax1.set_ylabel('Accuracy')
             ax1.set_title('Category Performance: Accuracy vs Sample Count (Color = Bias Score)')
             plt.colorbar(scatter, ax=ax1, label='Bias Score')
             
-            # Add category labels for extreme points
             for i, category in enumerate(categories):
                 if accuracies[i] < 0.7 or bias_scores[i] > 0.1:
                     ax1.annotate(category, (sample_counts[i], accuracies[i]), xytext=(5, 5), 
                                textcoords='offset points', fontsize=8, alpha=0.7)
             
-            # Plot 2: Accuracy distribution with bias indicators
             bars = ax2.bar(categories, accuracies, color=['red' if bias > 0.1 else 'orange' if bias > 0.05 else 'green' 
                                                          for bias in bias_scores], alpha=0.7)
             ax2.set_title('Category Accuracy with Bias Indicators')
             ax2.set_ylabel('Accuracy')
             ax2.set_xticklabels(categories, rotation=45, ha='right')
             
-            # Add bias score annotations
             for bar, bias in zip(bars, bias_scores):
                 height = bar.get_height()
                 ax2.text(bar.get_x() + bar.get_width()/2., height,
@@ -1183,15 +1120,12 @@ class EnhancedBiasVisualization:
             if not intersectional_results:
                 return False
                 
-            # Prepare data for heatmap
             groups = list(intersectional_results.keys())
             accuracies = [intersectional_results[group]['accuracy'] for group in groups]
             sizes = [intersectional_results[group]['size'] for group in groups]
             
-            # Create heatmap data
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
             
-            # Accuracy heatmap
             accuracy_matrix = np.array(accuracies).reshape(1, -1)
             im1 = ax1.imshow(accuracy_matrix, cmap='RdYlGn', aspect='auto')
             ax1.set_xticks(range(len(groups)))
@@ -1199,11 +1133,9 @@ class EnhancedBiasVisualization:
             ax1.set_title('Intersectional Group Accuracies')
             plt.colorbar(im1, ax=ax1)
             
-            # Add accuracy values
             for i, acc in enumerate(accuracies):
                 ax1.text(i, 0, f'{acc:.2f}', ha='center', va='center', fontweight='bold')
             
-            # Size heatmap
             size_matrix = np.array(sizes).reshape(1, -1)
             im2 = ax2.imshow(size_matrix, cmap='Blues', aspect='auto')
             ax2.set_xticks(range(len(groups)))
@@ -1211,7 +1143,6 @@ class EnhancedBiasVisualization:
             ax2.set_title('Intersectional Group Sizes')
             plt.colorbar(im2, ax=ax2)
             
-            # Add size values
             for i, size in enumerate(sizes):
                 ax2.text(i, 0, str(size), ha='center', va='center', fontweight='bold')
             
