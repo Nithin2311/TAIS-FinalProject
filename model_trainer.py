@@ -89,7 +89,6 @@ class EnhancedTrainer(Trainer):
         if self.use_focal_loss and self.focal_loss:
             loss = self.focal_loss(logits, labels)
         elif self.class_weights is not None:
-            # Apply class weights for imbalanced data
             loss_fct = torch.nn.CrossEntropyLoss(
                 weight=torch.tensor(self.class_weights, dtype=torch.float).to(model.device)
             )
@@ -111,7 +110,6 @@ def compute_metrics(eval_pred):
     )
     accuracy = accuracy_score(labels, predictions)
     
-    # Per-class metrics
     per_class_precision, per_class_recall, per_class_f1, _ = precision_recall_fscore_support(
         labels, predictions, average=None, zero_division=0
     )
@@ -132,14 +130,11 @@ def setup_optimized_model(num_labels, model_name):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
-    # Load tokenizer and model with better configuration
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     
-    # Add padding token if it doesn't exist
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
-    # Enhanced model configuration
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name,
         num_labels=num_labels,
@@ -161,25 +156,20 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
     print("ENHANCED MODEL EVALUATION")
     print("=" * 60)
     
-    # Get predictions
     predictions = trainer.predict(test_dataset)
     pred_labels = np.argmax(predictions.predictions, axis=1)
     true_labels = predictions.label_ids
     
-    # Calculate metrics
     accuracy = accuracy_score(true_labels, pred_labels)
     precision, recall, f1, _ = precision_recall_fscore_support(
         true_labels, pred_labels, average='weighted', zero_division=0
     )
     
-    # Fix: Handle both string and integer keys in label_map
     try:
         target_names = [label_map[i] for i in range(len(label_map))]
     except KeyError:
-        # If label_map uses string keys, try to convert
         target_names = [label_map[str(i)] for i in range(len(label_map))]
     
-    # Detailed classification report
     class_report = classification_report(
         true_labels, 
         pred_labels, 
@@ -193,7 +183,6 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
     print(f"Precision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
     
-    # Enhanced per-class accuracy analysis
     print("\nCOMPREHENSIVE CATEGORY PERFORMANCE:")
     print("-" * 50)
     
@@ -208,10 +197,9 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
                 category_name = label_map[i]
             except KeyError:
                 category_name = label_map[str(i)]
-            category_accuracies[category_name] = float(cat_accuracy)  # Convert to float for JSON
-            category_support[category_name] = int(np.sum(mask))  # Convert to int for JSON
+            category_accuracies[category_name] = float(cat_accuracy)
+            category_support[category_name] = int(np.sum(mask))
     
-    # Sort by accuracy and show all categories
     sorted_categories = sorted(category_accuracies.items(), key=lambda x: x[1], reverse=True)
     
     print("All Categories by Accuracy:")
@@ -219,14 +207,12 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
         support = category_support[category]
         print(f"  {category:25s}: {acc:.4f} ({support} samples)")
     
-    # Identify problematic categories
     problem_categories = [(cat, acc) for cat, acc in sorted_categories if acc < 0.7]
     if problem_categories:
-        print(f"\n⚠️  {len(problem_categories)} categories with accuracy < 70%:")
+        print(f"\nWARNING: {len(problem_categories)} categories with accuracy < 70%:")
         for cat, acc in problem_categories:
             print(f"  {cat:25s}: {acc:.4f}")
     
-    # Save enhanced results - Convert all numpy types to native Python types
     if save_report:
         results = {
             'eval_accuracy': float(accuracy),
@@ -236,15 +222,14 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
             'per_class_accuracy': category_accuracies,
             'per_class_support': category_support,
             'classification_report': class_report,
-            'predictions': [int(x) for x in pred_labels.tolist()],  # Convert to native int
-            'true_labels': [int(x) for x in true_labels.tolist()]   # Convert to native int
+            'predictions': [int(x) for x in pred_labels.tolist()],
+            'true_labels': [int(x) for x in true_labels.tolist()]
         }
         
-        # Convert numpy types in classification_report
         for key, value in results['classification_report'].items():
             if isinstance(value, dict):
                 for subkey, subvalue in value.items():
-                    if hasattr(subvalue, 'item'):  # Check if it's a numpy type
+                    if hasattr(subvalue, 'item'):
                         results['classification_report'][key][subkey] = subvalue.item()
         
         os.makedirs('results', exist_ok=True)
