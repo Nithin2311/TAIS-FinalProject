@@ -1,5 +1,5 @@
 """
-Enhanced Training script for Resume Classification System
+Baseline Model Training Script
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
@@ -8,15 +8,16 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
-from config import Config
-from data_processor import download_dataset, load_and_preprocess_data, split_data
-from model_trainer import ResumeDataset, EnhancedTrainer, compute_metrics, enhanced_evaluate_model, setup_optimized_model
 import torch
 from transformers import TrainingArguments, EarlyStoppingCallback
 from sklearn.utils.class_weight import compute_class_weight
 import numpy as np
 import json
 import pickle
+
+from config import Config
+from data_processor import download_dataset, load_and_preprocess_data, split_data
+from model_trainer import ResumeDataset, EnhancedTrainer, compute_metrics, enhanced_evaluate_model, setup_optimized_model
 
 
 def setup_environment():
@@ -49,58 +50,55 @@ def save_training_data(X_train, X_val, X_test, y_train, y_val, y_test, label_map
 def print_final_summary(test_results):
     """Print final project summary"""
     print("\n" + "=" * 60)
-    print("FINAL PROJECT COMPLETION SUMMARY")
+    print("BASELINE MODEL TRAINING COMPLETED")
     print("=" * 60)
     
     accuracy = test_results['eval_accuracy']
-    print(f"FINAL TEST ACCURACY: {accuracy*100:.2f}%")
+    print(f"Test Accuracy: {accuracy*100:.2f}%")
     
     category_accuracies = test_results['per_class_accuracy']
     
     problem_categories = {cat: acc for cat, acc in category_accuracies.items() if acc < 0.7}
     improved_categories = {cat: acc for cat, acc in category_accuracies.items() if acc > 0.9}
     
-    print(f"\nCATEGORY PERFORMANCE ANALYSIS:")
-    print(f"  Problem categories (<70%): {len(problem_categories)}")
-    print(f"  Excellent categories (>90%): {len(improved_categories)}")
+    print(f"Problem categories (<70%): {len(problem_categories)}")
+    print(f"Excellent categories (>90%): {len(improved_categories)}")
     
     if problem_categories:
-        print(f"\nCategories needing attention:")
+        print("Categories needing attention:")
         for cat, acc in list(problem_categories.items())[:3]:
             print(f"    {cat}: {acc:.1%}")
-    
-    print("\nENHANCEMENTS IMPLEMENTED:")
-    print("  1. Enhanced class balancing with SMOTE")
-    print("  2. Focal Loss for imbalanced data")
-    print("  3. Improved demographic inference")
-    print("  4. Comprehensive bias analysis")
-    print("  5. Multi-attribute debiasing")
-    
-    print("\nPROJECT READY FOR SUBMISSION!")
-    print("=" * 60)
 
 
-def enhanced_main():
-    """Final enhanced main training pipeline"""
-    print("=" * 60)
-    print("FINAL ENHANCED RESUME CLASSIFICATION SYSTEM")
-    print("=" * 60)
-    print("CAI 6605: Trustworthy AI Systems - FINAL PROJECT")
+def train_baseline():
+    """Train baseline model"""
+    print("Baseline Resume Classification System Training")
+    print("CAI 6605: Trustworthy AI Systems - Final Project")
     print("Group 15: Nithin Palyam, Lorenzo LaPlace")
-    print("Target: >85% Accuracy | Enhanced RoBERTa-base")
-    print("=" * 60)
     
-    Config.display_enhanced_config()
+    if hasattr(Config, 'display_enhanced_config'):
+        Config.display_enhanced_config()
+    else:
+        # Fallback if method doesn't exist
+        print("=" * 60)
+        print("BASELINE MODEL CONFIGURATION")
+        print("=" * 60)
+        print(f"Model: {Config.MODEL_NAME}")
+        print(f"Max Length: {Config.MAX_LENGTH} tokens")
+        print(f"Batch Size: {Config.BATCH_SIZE}")
+        print(f"Epochs: {Config.NUM_EPOCHS}")
+        print(f"Learning Rate: {Config.LEARNING_RATE}")
+        print("=" * 60)
     
     setup_environment()
     
     if not download_dataset():
-        print("Failed to download dataset. Exiting...")
+        print("Failed to download dataset.")
         return
     
     df, label_map, num_labels = load_and_preprocess_data(Config.DATA_PATH)
     if df is None:
-        print("Failed to process data. Exiting...")
+        print("Failed to process data.")
         return
     
     X_train, X_val, X_test, y_train, y_val, y_test = split_data(
@@ -127,10 +125,10 @@ def enhanced_main():
         y=y_train
     )
     class_weights = class_weights.astype(np.float32)
-    print("Computed class weights for imbalanced data")
+    print("Computed class weights")
     
     training_args = TrainingArguments(
-        output_dir=Config.MODEL_SAVE_PATH,
+        output_dir=Config.BASELINE_MODEL_PATH,
         num_train_epochs=Config.NUM_EPOCHS,
         per_device_train_batch_size=Config.BATCH_SIZE,
         per_device_eval_batch_size=Config.BATCH_SIZE * 2,
@@ -167,27 +165,17 @@ def enhanced_main():
         callbacks=[early_stopping]
     )
     
-    print("\n" + "=" * 60)
-    print("FINAL ENHANCED MODEL TRAINING")
-    print("=" * 60)
-    print(f"Epochs: {Config.NUM_EPOCHS}")
-    print(f"Batch Size: {Config.BATCH_SIZE}")
-    print(f"Effective Batch Size: {Config.BATCH_SIZE * Config.GRADIENT_ACCUMULATION_STEPS}")
-    print(f"Learning Rate: {Config.LEARNING_RATE}")
-    print(f"Early Stopping Patience: {Config.EARLY_STOPPING_PATIENCE}")
-    print(f"Focal Loss: {Config.USE_FOCAL_LOSS}")
-    print("=" * 60)
-    
+    print("Baseline Model Training")
     trainer.train()
-    print("\nEnhanced Model Training Complete!")
+    print("Baseline Model Training Complete")
     
-    trainer.save_model(Config.MODEL_SAVE_PATH)
-    tokenizer.save_pretrained(Config.MODEL_SAVE_PATH)
-    print(f"Enhanced model saved to {Config.MODEL_SAVE_PATH}")
+    trainer.save_model(Config.BASELINE_MODEL_PATH)
+    tokenizer.save_pretrained(Config.BASELINE_MODEL_PATH)
+    print(f"Baseline model saved to {Config.BASELINE_MODEL_PATH}")
     
     test_results = enhanced_evaluate_model(trainer, test_dataset, label_map)
     
-    with open('results/final_training_results.json', 'w') as f:
+    with open('results/baseline_training_results.json', 'w') as f:
         json.dump(test_results, f, indent=2)
     
     with open('results/training_results.json', 'w') as f:
@@ -199,4 +187,4 @@ def enhanced_main():
 
 
 if __name__ == "__main__":
-    enhanced_main()
+    train_baseline()
