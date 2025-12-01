@@ -1,5 +1,5 @@
 """
-Enhanced Model training and evaluation module
+Enhanced Model Training and Evaluation Module
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
@@ -20,7 +20,7 @@ from config import Config
 
 
 class ResumeDataset(Dataset):
-    """Enhanced PyTorch Dataset for resume classification"""
+    """PyTorch Dataset for resume classification"""
     
     def __init__(self, texts, labels, tokenizer, max_length):
         self.texts = texts
@@ -72,7 +72,7 @@ class FocalLoss(nn.Module):
 
 
 class EnhancedTrainer(Trainer):
-    """Enhanced trainer with class weighting, focal loss, and gradient accumulation"""
+    """Enhanced trainer with class weighting and focal loss"""
     
     def __init__(self, class_weights=None, use_focal_loss=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -126,7 +126,7 @@ def compute_metrics(eval_pred):
 
 
 def setup_optimized_model(num_labels, model_name):
-    """Enhanced model initialization with better configuration"""
+    """Enhanced model initialization"""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
     
@@ -151,9 +151,9 @@ def setup_optimized_model(num_labels, model_name):
 
 
 def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
-    """Comprehensive model evaluation with detailed analysis"""
+    """Comprehensive model evaluation"""
     print("\n" + "=" * 60)
-    print("ENHANCED MODEL EVALUATION")
+    print("Enhanced Model Evaluation")
     print("=" * 60)
     
     predictions = trainer.predict(test_dataset)
@@ -183,7 +183,7 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
     print(f"Precision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
     
-    print("\nCOMPREHENSIVE CATEGORY PERFORMANCE:")
+    print("\nComprehensive Category Performance:")
     print("-" * 50)
     
     category_accuracies = {}
@@ -203,14 +203,14 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
     sorted_categories = sorted(category_accuracies.items(), key=lambda x: x[1], reverse=True)
     
     print("All Categories by Accuracy:")
-    for category, acc in sorted_categories:
+    for category, acc in sorted_categories[:10]:
         support = category_support[category]
         print(f"  {category:25s}: {acc:.4f} ({support} samples)")
     
     problem_categories = [(cat, acc) for cat, acc in sorted_categories if acc < 0.7]
     if problem_categories:
-        print(f"\nWARNING: {len(problem_categories)} categories with accuracy < 70%:")
-        for cat, acc in problem_categories:
+        print(f"Warning: {len(problem_categories)} categories with accuracy < 70%")
+        for cat, acc in problem_categories[:3]:
             print(f"  {cat:25s}: {acc:.4f}")
     
     if save_report:
@@ -236,6 +236,6 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
         with open('results/enhanced_training_results.json', 'w') as f:
             json.dump(results, f, indent=2)
         
-        print(f"\nEnhanced evaluation results saved to results/enhanced_training_results.json")
+        print(f"Enhanced evaluation results saved to results/enhanced_training_results.json")
     
     return results
