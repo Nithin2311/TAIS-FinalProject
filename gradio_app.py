@@ -1,5 +1,5 @@
 """
-Enhanced Gradio web interface with Dual Model Comparison and Explainability
+Enhanced Dual Model Comparison Web Interface
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
@@ -16,16 +16,12 @@ from bias_analyzer import EnhancedBiasAnalyzer, EnhancedBiasVisualization, Enhan
 import lime
 import lime.lime_text
 import matplotlib.pyplot as plt
-import tempfile
-import base64
 from io import BytesIO
-import time
-from collections import Counter
 from PIL import Image
 
 
 class LimeExplainer:
-    """LIME explainer for model predictions with improved error handling"""
+    """LIME explainer for model predictions"""
     
     def __init__(self, model, tokenizer, label_map, device):
         self.model = model
@@ -58,7 +54,6 @@ class LimeExplainer:
                         probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
                         probabilities.append(probs.cpu().numpy()[0])
                 except Exception as e:
-                    print(f"Prediction error in LIME: {e}")
                     probabilities.append(np.zeros(len(self.label_map)))
             
             return np.array(probabilities)
@@ -89,7 +84,6 @@ class LimeExplainer:
             plt.close(fig)
             buf.seek(0)
             
-            # Convert to numpy array for Gradio
             image = Image.open(buf)
             numpy_array = np.array(image)
             return numpy_array
@@ -141,7 +135,7 @@ class EnhancedDualModelResumeClassifier:
                 print("Loading improved debiased model...")
                 self.models['debiased'] = AutoModelForSequenceClassification.from_pretrained(improved_debiased_path)
                 self.tokenizers['debiased'] = AutoTokenizer.from_pretrained(improved_debiased_path)
-                print("Using IMPROVED debiased model")
+                print("Using improved debiased model")
             elif os.path.exists(standard_debiased_path):
                 print("Loading standard debiased model...")
                 self.models['debiased'] = AutoModelForSequenceClassification.from_pretrained(standard_debiased_path)
@@ -222,11 +216,11 @@ class EnhancedDualModelResumeClassifier:
             except:
                 self.comparison = None
             
-            print("All models and components loaded successfully!")
+            print("All models and components loaded successfully")
             
         except Exception as e:
             print(f"Error loading models: {e}")
-            print("Please run 'python train.py' first to train the model")
+            print("Please run training scripts first")
             raise
     
     def predict(self, text, model_type='baseline'):
@@ -365,8 +359,7 @@ class EnhancedDualModelResumeClassifier:
             'gender': self.demo_inference.infer_gender(text),
             'educational_privilege': self.demo_inference.infer_educational_privilege(text),
             'diversity_focus': self.demo_inference.infer_diversity_indicators(text),
-            'age_group': self.demo_inference.infer_age_group(text),
-            'disability_status': self.demo_inference.infer_disability_status(text)
+            'age_group': self.demo_inference.infer_age_group(text)
         }
     
     def get_comparison_report(self):
@@ -448,11 +441,6 @@ class EnhancedDualModelResumeClassifier:
                 summary += f"  - Average Bias: {racial_bias.get('average_bias', 0):.3f}\n"
                 summary += f"  - White-Black Disparity: {racial_bias.get('white_black_disparity', 0):.3f}\n\n"
         
-        cf_fairness = report.get('counterfactual_fairness', {})
-        if cf_fairness:
-            summary += f"### Counterfactual Fairness\n"
-            summary += f"- **Unfairness Rate**: {cf_fairness.get('counterfactual_unfairness_rate', 0):.3f}\n\n"
-        
         recommendations = report.get('recommendations', [])
         if recommendations:
             summary += "### Recommendations\n"
@@ -467,7 +455,7 @@ def create_enhanced_dual_model_interface():
     
     try:
         classifier = EnhancedDualModelResumeClassifier()
-        print("Enhanced dual model classifier loaded successfully!")
+        print("Enhanced dual model classifier loaded successfully")
     except Exception as e:
         print(f"Failed to initialize classifier: {e}")
         with gr.Blocks(title="Resume Classifier - Setup Required", theme=gr.themes.Soft()) as demo:
@@ -568,7 +556,7 @@ Pronouns: They/Them"""
                     gr.Examples(
                         examples=examples,
                         inputs=input_text,
-                        label="Example Resumes with Demographic Variations (Click to test bias detection)"
+                        label="Example Resumes with Demographic Variations"
                     )
                 
                 with gr.Column(scale=2):
@@ -717,11 +705,6 @@ Pronouns: They/Them"""
             - Counterfactual fairness analysis
             - Intersectional bias heatmaps
             
-            **New Explainability Features:**
-            - LIME explanations for individual predictions
-            - Bias attribution visualization
-            - Feature importance analysis
-            
             **Available Job Categories:**
             ACCOUNTANT, ADVOCATE, AGRICULTURE, APPAREL, ARTS, AUTOMOBILE, AVIATION,
             BANKING, BPO, BUSINESS-DEVELOPMENT, CHEF, CONSTRUCTION, CONSULTANT,
@@ -751,7 +734,7 @@ if __name__ == "__main__":
             share=True,
             server_name="0.0.0.0",
             server_port=7860,
-            debug=True
+            debug=False
         )
     else:
         print("Failed to create interface. Please check if models are trained.")
