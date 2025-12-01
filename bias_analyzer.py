@@ -16,10 +16,8 @@ import json
 import re
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import itertools
-import shap
 import lime
 import lime.lime_text
-from lime import submodular_pick
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -603,7 +601,6 @@ class EnhancedBiasAnalyzer:
         self.label_map = label_map
         self.device = device
         self.demographic_inference = EnhancedDemographicInference()
-        self.fairness_metrics = EnhancedFairnessMetrics()
         self.name_experiment = EnhancedNameSubstitutionExperiment(tokenizer, model, device)
         
     def comprehensive_bias_analysis(self, test_texts, test_labels, test_predictions):
@@ -691,23 +688,81 @@ class EnhancedBiasAnalyzer:
             
             try:
                 metrics[demo_type] = {
-                    'demographic_parity': self.fairness_metrics.demographic_parity_difference(y_pred, demo_encoded),
-                    'equal_opportunity': self.fairness_metrics.equal_opportunity_difference(y_true, y_pred, demo_encoded),
-                    'accuracy_equality': self.fairness_metrics.accuracy_equality_difference(y_true, y_pred, demo_encoded),
-                    'statistical_parity': self.fairness_metrics.statistical_parity_difference(y_pred, demo_encoded),
-                    'disparate_impact': self.fairness_metrics.disparate_impact_ratio(y_pred, demo_values)
+                    'demographic_parity': self._demographic_parity_difference(y_pred, demo_encoded),
+                    'equal_opportunity': self._equal_opportunity_difference(y_true, y_pred, demo_encoded),
+                    'accuracy_equality': self._accuracy_equality_difference(y_true, y_pred, demo_encoded)
                 }
             except Exception as e:
                 print(f"Error calculating {demo_type} metrics: {e}")
                 metrics[demo_type] = {
                     'demographic_parity': 0.0,
                     'equal_opportunity': 0.0,
-                    'accuracy_equality': 0.0,
-                    'statistical_parity': 0.0,
-                    'disparate_impact': {}
+                    'accuracy_equality': 0.0
                 }
         
         return metrics
+    
+    def _demographic_parity_difference(self, y_pred, protected_attr):
+        """Correct demographic parity for multi-class classification"""
+        protected_attr = np.array(protected_attr)
+        y_pred = np.array(y_pred)
+        
+        groups = np.unique(protected_attr)
+        
+        # For multi-class, we need to consider each class
+        unique_classes = np.unique(y_pred)
+        max_differences = []
+        
+        for class_label in unique_classes:
+            group_positive_rates = []
+            for group in groups:
+                group_mask = protected_attr == group
+                if np.sum(group_mask) > 0:
+                    # Probability of predicting this class for this group
+                    positive_rate = np.mean(y_pred[group_mask] == class_label)
+                    group_positive_rates.append(positive_rate)
+            
+            if group_positive_rates:
+                max_diff = max(group_positive_rates) - min(group_positive_rates)
+                max_differences.append(max_diff)
+        
+        # Return the maximum disparity across all classes
+        return max(max_differences) if max_differences else 0
+    
+    def _equal_opportunity_difference(self, y_true, y_pred, protected_attr):
+        """Calculate equal opportunity difference"""
+        y_true = np.array(y_true)
+        y_pred = np.array(y_pred)
+        protected_attr = np.array(protected_attr)
+        
+        groups = np.unique(protected_attr)
+        recall_rates = []
+        
+        for group in groups:
+            group_mask = protected_attr == group
+            true_positive_mask = group_mask & (y_true == y_pred)
+            if np.sum(true_positive_mask) > 0:
+                recall = np.sum(y_pred[true_positive_mask] == y_true[true_positive_mask]) / np.sum(true_positive_mask)
+                recall_rates.append(recall)
+        
+        return max(recall_rates) - min(recall_rates) if recall_rates else 0
+    
+    def _accuracy_equality_difference(self, y_true, y_pred, protected_attr):
+        """Calculate accuracy equality difference"""
+        y_true = np.array(y_true)
+        y_pred = np.array(y_pred)
+        protected_attr = np.array(protected_attr)
+        
+        groups = np.unique(protected_attr)
+        accuracies = []
+        
+        for group in groups:
+            group_mask = protected_attr == group
+            if np.sum(group_mask) > 0:
+                accuracy = accuracy_score(y_true[group_mask], y_pred[group_mask])
+                accuracies.append(accuracy)
+        
+        return max(accuracies) - min(accuracies) if accuracies else 0
     
     def _enhanced_analyze_category_bias(self, y_true, y_pred, demographics):
         """Enhanced analysis of bias across job categories"""
@@ -771,9 +826,20 @@ class EnhancedBiasAnalyzer:
             'privilege': demographics['educational_privilege']
         }
         
-        intersectional_results = self.fairness_metrics.intersectional_fairness_analysis(
-            y_true, y_pred, protected_attrs
-        )
+        intersectional_results = {}
+        unique_combinations = set(zip(protected_attrs['gender'], protected_attrs['privilege']))
+        
+        for combo in unique_combinations:
+            group_mask = (np.array(protected_attrs['gender']) == combo[0]) & (np.array(protected_attrs['privilege']) == combo[1])
+            group_name = f"gender_{combo[0]}_privilege_{combo[1]}"
+            
+            if np.sum(group_mask) > 0:
+                group_accuracy = accuracy_score(y_true[group_mask], y_pred[group_mask])
+                intersectional_results[group_name] = {
+                    'accuracy': group_accuracy,
+                    'size': np.sum(group_mask),
+                    'combination': combo
+                }
         
         return intersectional_results
     
@@ -1034,7 +1100,7 @@ class EnhancedBiasVisualization:
             
             for idx, (metric, title) in enumerate(zip(metrics_to_plot, titles)):
                 demo_types = list(fairness_results.keys())
-                values = [fairness_results[demo][metric] for demo in demo_types]
+                values = [fairness_results[demo].get(metric, 0) for demo in demo_types]
                 
                 colors = ['red' if abs(val) > 0.1 else 'orange' if abs(val) > 0.05 else 'green' for val in values]
                 
@@ -1059,98 +1125,4 @@ class EnhancedBiasVisualization:
             return True
         except Exception as e:
             print(f"Visualization error: {e}")
-            return False
-    
-    @staticmethod
-    def plot_category_performance_bias(category_bias, save_path=None):
-        """Plot category performance with bias indicators"""
-        try:
-            categories = list(category_bias.keys())
-            accuracies = [cat_data['overall_accuracy'] for cat_data in category_bias.values()]
-            sample_counts = [cat_data['sample_count'] for cat_data in category_bias.values()]
-            
-            bias_scores = []
-            for cat_data in category_bias.values():
-                max_bias = 0
-                demo_analysis = cat_data.get('demographic_analysis', {})
-                for demo_type, analysis in demo_analysis.items():
-                    accuracies_dict = analysis.get('accuracies', {})
-                    if len(accuracies_dict) > 1:
-                        bias = max(accuracies_dict.values()) - min(accuracies_dict.values())
-                        max_bias = max(max_bias, bias)
-                bias_scores.append(max_bias)
-            
-            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10))
-            
-            scatter = ax1.scatter(sample_counts, accuracies, c=bias_scores, cmap='Reds', s=100, alpha=0.7)
-            ax1.set_xlabel('Sample Count')
-            ax1.set_ylabel('Accuracy')
-            ax1.set_title('Category Performance: Accuracy vs Sample Count (Color = Bias Score)')
-            plt.colorbar(scatter, ax=ax1, label='Bias Score')
-            
-            for i, category in enumerate(categories):
-                if accuracies[i] < 0.7 or bias_scores[i] > 0.1:
-                    ax1.annotate(category, (sample_counts[i], accuracies[i]), xytext=(5, 5), 
-                               textcoords='offset points', fontsize=8, alpha=0.7)
-            
-            bars = ax2.bar(categories, accuracies, color=['red' if bias > 0.1 else 'orange' if bias > 0.05 else 'green' 
-                                                         for bias in bias_scores], alpha=0.7)
-            ax2.set_title('Category Accuracy with Bias Indicators')
-            ax2.set_ylabel('Accuracy')
-            ax2.set_xticklabels(categories, rotation=45, ha='right')
-            
-            for bar, bias in zip(bars, bias_scores):
-                height = bar.get_height()
-                ax2.text(bar.get_x() + bar.get_width()/2., height,
-                        f'{bias:.2f}', ha='center', va='bottom', fontsize=8)
-            
-            plt.tight_layout()
-            if save_path:
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            plt.show()
-            return True
-        except Exception as e:
-            print(f"Visualization error: {e}")
-            return False
-    
-    @staticmethod
-    def plot_intersectional_bias_heatmap(intersectional_results, save_path=None):
-        """Plot intersectional bias as heatmap"""
-        try:
-            if not intersectional_results:
-                return False
-                
-            groups = list(intersectional_results.keys())
-            accuracies = [intersectional_results[group]['accuracy'] for group in groups]
-            sizes = [intersectional_results[group]['size'] for group in groups]
-            
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-            
-            accuracy_matrix = np.array(accuracies).reshape(1, -1)
-            im1 = ax1.imshow(accuracy_matrix, cmap='RdYlGn', aspect='auto')
-            ax1.set_xticks(range(len(groups)))
-            ax1.set_xticklabels(groups, rotation=45, ha='right')
-            ax1.set_title('Intersectional Group Accuracies')
-            plt.colorbar(im1, ax=ax1)
-            
-            for i, acc in enumerate(accuracies):
-                ax1.text(i, 0, f'{acc:.2f}', ha='center', va='center', fontweight='bold')
-            
-            size_matrix = np.array(sizes).reshape(1, -1)
-            im2 = ax2.imshow(size_matrix, cmap='Blues', aspect='auto')
-            ax2.set_xticks(range(len(groups)))
-            ax2.set_xticklabels(groups, rotation=45, ha='right')
-            ax2.set_title('Intersectional Group Sizes')
-            plt.colorbar(im2, ax=ax2)
-            
-            for i, size in enumerate(sizes):
-                ax2.text(i, 0, str(size), ha='center', va='center', fontweight='bold')
-            
-            plt.tight_layout()
-            if save_path:
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            plt.show()
-            return True
-        except Exception as e:
-            print(f"Heatmap visualization error: {e}")
             return False
