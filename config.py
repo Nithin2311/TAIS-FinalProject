@@ -1,11 +1,11 @@
 """
-Enhanced Configuration settings for Resume Classification System
+Configuration settings for Resume Classification System
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
 
 class Config:
-    """Optimized configuration for enhanced resume classification"""
+    """Configuration for resume classification"""
     
     MODEL_NAME = 'roberta-base'
     MAX_LENGTH = 512
@@ -26,7 +26,7 @@ class Config:
     RANDOM_STATE = 42
     
     DATA_PATH = 'data/raw/Resume.csv'
-    MODEL_SAVE_PATH = 'models/resume_classifier'
+    BASELINE_MODEL_PATH = 'models/resume_classifier_baseline'
     DEBIASED_MODEL_PATH = 'models/resume_classifier_debiased'
     
     USE_FOCAL_LOSS = True
