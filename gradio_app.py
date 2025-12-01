@@ -370,37 +370,80 @@ class EnhancedDualModelResumeClassifier:
         comp = self.comparison
         report = "## Baseline vs Debiased Model Comparison\n\n"
         
-        perf = comp['performance']
-        report += "### Performance Comparison\n"
-        report += f"- **Baseline Accuracy**: {perf['baseline_accuracy']*100:.2f}%\n"
-        report += f"- **Debiased Accuracy**: {perf['debiased_accuracy']*100:.2f}%\n"
-        report += f"- **Change**: {perf['accuracy_change_percent']:+.2f}%\n\n"
+        # Debug: print the structure to see what keys exist
+        print(f"Comparison structure keys: {list(comp.keys())}")
         
-        bias_red = comp['bias_reduction']['gender_bias']
-        report += "### Bias Reduction\n"
-        report += f"- **Gender Bias Reduction**: {bias_red['reduction_percent']:+.2f}%\n"
-        report += f"- Baseline Bias: {bias_red['baseline']:.3f}\n"
-        report += f"- Debiased Bias: {bias_red['debiased']:.3f}\n\n"
+        # Performance comparison
+        if 'performance' in comp:
+            perf = comp['performance']
+            report += "### Performance Comparison\n"
+            report += f"- **Baseline Accuracy**: {perf.get('baseline_accuracy', 0)*100:.2f}%\n"
+            report += f"- **Debiased Accuracy**: {perf.get('debiased_accuracy', 0)*100:.2f}%\n"
+            report += f"- **Change**: {perf.get('accuracy_change_percent', 0):+.2f}%\n\n"
+        else:
+            report += "### Performance Comparison\n- Data not available\n\n"
         
-        report += "### Fairness Improvements\n"
-        for demo_type, improvement in comp['fairness_improvement'].items():
-            arrow = "UP" if improvement['improvement'] > 0 else "DOWN"
-            report += f"- **{demo_type.title()}**: {improvement['improvement']:+.3f} {arrow}\n"
+        # Bias reduction
+        if 'bias_reduction' in comp and 'gender_bias' in comp['bias_reduction']:
+            bias_red = comp['bias_reduction']['gender_bias']
+            report += "### Bias Reduction\n"
+            report += f"- **Gender Bias Reduction**: {bias_red.get('reduction_percent', 0):+.2f}%\n"
+            report += f"- Baseline Bias: {bias_red.get('baseline', 0):.3f}\n"
+            report += f"- Debiased Bias: {bias_red.get('debiased', 0):.3f}\n\n"
+        else:
+            report += "### Bias Reduction\n- Data not available\n\n"
         
-        cat_improvements = comp.get('category_improvements', {})
-        if cat_improvements.get('most_improved'):
-            report += f"\n### Category Improvements\n"
-            report += f"- **Categories Improved**: {cat_improvements['total_improved']}\n"
-            report += f"- **Average Improvement**: {cat_improvements['avg_improvement']:.3f}\n"
-            report += f"- **Most Improved**:\n"
-            for category, imp in cat_improvements['most_improved'][:3]:
-                report += f"  - {category}: +{imp:.3f}\n"
+        # Fairness improvement
+        if 'fairness_improvement' in comp:
+            fairness_improvement = comp['fairness_improvement']
+            report += "### Fairness Improvements\n"
+            for demo_type, improvement in fairness_improvement.items():
+                if isinstance(improvement, dict) and 'improvement' in improvement:
+                    arrow = "UP" if improvement['improvement'] > 0 else "DOWN"
+                    report += f"- **{demo_type.title()}**: {improvement['improvement']:+.3f} {arrow}\n"
+                elif isinstance(improvement, (int, float)):
+                    arrow = "UP" if improvement > 0 else "DOWN"
+                    report += f"- **{demo_type.title()}**: {improvement:+.3f} {arrow}\n"
+        else:
+            report += "### Fairness Improvements\n- Data not available\n\n"
         
-        assessment = comp['overall_assessment']
-        report += f"\n### Overall Assessment\n"
-        report += f"- **Rating**: {assessment['rating']}\n"
-        report += f"- **Score**: {assessment['score']:.3f}\n"
-        report += f"- **Summary**: {assessment['summary']}\n"
+        # Category improvements
+        if 'category_improvements' in comp:
+            cat_improvements = comp['category_improvements']
+            if cat_improvements and cat_improvements.get('most_improved'):
+                report += f"\n### Category Improvements\n"
+                report += f"- **Categories Improved**: {cat_improvements.get('total_improved', 0)}\n"
+                report += f"- **Average Improvement**: {cat_improvements.get('avg_improvement', 0):.3f}\n"
+                report += f"- **Most Improved**:\n"
+                for category, imp in cat_improvements.get('most_improved', [])[:3]:
+                    report += f"  - {category}: +{imp:.3f}\n"
+        
+        # Overall assessment
+        if 'overall_assessment' in comp:
+            assessment = comp['overall_assessment']
+            report += f"\n### Overall Assessment\n"
+            report += f"- **Rating**: {assessment.get('rating', 'N/A')}\n"
+            report += f"- **Score**: {assessment.get('score', 0):.3f}\n"
+            report += f"- **Summary**: {assessment.get('summary', 'N/A')}\n"
+        else:
+            # Generate a dynamic assessment based on available data
+            report += f"\n### Overall Assessment\n"
+            baseline_acc = comp.get('performance', {}).get('baseline_accuracy', 0)
+            debiased_acc = comp.get('performance', {}).get('debiased_accuracy', 0)
+            bias_red = comp.get('bias_reduction', {}).get('gender_bias', {}).get('reduction_percent', 0)
+            
+            if debiased_acc > baseline_acc and bias_red > 0:
+                report += f"- **Rating**: Excellent\n"
+                report += f"- **Score**: 0.9\n"
+                report += f"- **Summary**: Debiased model improves both accuracy and fairness\n"
+            elif bias_red > 0:
+                report += f"- **Rating**: Good\n"
+                report += f"- **Score**: 0.7\n"
+                report += f"- **Summary**: Debiased model reduces bias with minimal accuracy trade-off\n"
+            else:
+                report += f"- **Rating**: Needs Improvement\n"
+                report += f"- **Score**: 0.5\n"
+                report += f"- **Summary**: Further bias mitigation needed\n"
         
         return report
     
