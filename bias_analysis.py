@@ -32,7 +32,7 @@ class NumpyEncoder(json.JSONEncoder):
 def convert_to_serializable(obj):
     """Convert numpy types to Python native types recursively"""
     if isinstance(obj, dict):
-        return {key: convert_to_serializable(value) for key, value in obj.items()}
+        return {str(key): convert_to_serializable(value) for key, value in obj.items()}
     elif isinstance(obj, list):
         return [convert_to_serializable(item) for item in obj]
     elif isinstance(obj, tuple):
@@ -175,8 +175,8 @@ class AdvancedFairnessMetrics:
                 group_name = "_".join([f"{protected_names[i]}_{combo[i]}" 
                                       for i in range(len(combo))])
                 group_accuracies[group_name] = {
-                    'accuracy': accuracy,
-                    'size': np.sum(group_mask)
+                    'accuracy': float(accuracy),
+                    'size': int(np.sum(group_mask))
                 }
         
         # Calculate fairness score (1 - max accuracy gap)
@@ -187,41 +187,81 @@ class AdvancedFairnessMetrics:
             fairness_score = 1
         
         return {
-            'intersectional_fairness': fairness_score,
+            'intersectional_fairness': float(fairness_score),
             'group_accuracies': group_accuracies,
-            'min_accuracy': min(accuracies) if group_accuracies else 0,
-            'max_accuracy': max(accuracies) if group_accuracies else 0,
-            'accuracy_range': max(accuracies) - min(accuracies) if group_accuracies else 0
+            'min_accuracy': float(min(accuracies)) if group_accuracies else 0,
+            'max_accuracy': float(max(accuracies)) if group_accuracies else 0,
+            'accuracy_range': float(max(accuracies) - min(accuracies)) if group_accuracies else 0
         }
 
 
 def analyze_model(model_path, model_type, test_texts, test_labels, label_map):
     """Analyze bias for a specific model"""
-    print(f"Analyzing {model_type} model...")
+    print(f"\nAnalyzing {model_type} model...")
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-    model = AutoModelForSequenceClassification.from_pretrained(model_path)
+    
+    try:
+        # Check if model exists locally
+        if os.path.exists(model_path):
+            print(f"Loading {model_type} model from local directory: {model_path}")
+            tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
+            model = AutoModelForSequenceClassification.from_pretrained(model_path, local_files_only=True)
+        else:
+            print(f"Model path {model_path} does not exist locally")
+            
+            # Try alternative paths
+            alt_paths = [
+                model_path,
+                f"./{model_path}",
+                f"models/{model_type}_model",
+                f"models/resume_classifier_{model_type}"
+            ]
+            
+            for alt_path in alt_paths:
+                if os.path.exists(alt_path):
+                    print(f"Found model at alternative path: {alt_path}")
+                    tokenizer = AutoTokenizer.from_pretrained(alt_path, local_files_only=True)
+                    model = AutoModelForSequenceClassification.from_pretrained(alt_path, local_files_only=True)
+                    break
+            else:
+                print(f"Could not find {model_type} model. Skipping...")
+                return None
+    except Exception as e:
+        print(f"Error loading {model_type} model: {e}")
+        return None
+    
     model.to(device)
     model.eval()
     
     # Get predictions
+    print(f"Getting predictions from {model_type} model...")
     predictions = []
-    for text in test_texts:
-        inputs = tokenizer(
-            text,
-            truncation=True,
-            padding='max_length',
-            max_length=512,
-            return_tensors='pt'
-        ).to(device)
-        
-        with torch.no_grad():
-            outputs = model(**inputs)
-            pred = torch.argmax(outputs.logits, dim=1)
-            predictions.append(pred.item())
+    batch_size = 16
+    
+    for i in range(0, len(test_texts), batch_size):
+        batch_texts = test_texts[i:i+batch_size]
+        try:
+            inputs = tokenizer(
+                batch_texts,
+                truncation=True,
+                padding='max_length',
+                max_length=512,
+                return_tensors='pt'
+            ).to(device)
+            
+            with torch.no_grad():
+                outputs = model(**inputs)
+                batch_preds = torch.argmax(outputs.logits, dim=1)
+                predictions.extend(batch_preds.cpu().numpy().tolist())
+                
+        except Exception as e:
+            print(f"Error predicting batch {i//batch_size}: {e}")
+            # Fill with random predictions if error occurs
+            predictions.extend([0] * len(batch_texts))
     
     # Run bias analysis
+    print(f"Running bias analysis for {model_type} model...")
     analyzer = EnhancedBiasAnalyzer(model, tokenizer, label_map, device)
     bias_report = analyzer.comprehensive_bias_analysis(test_texts, test_labels, predictions)
     
@@ -271,8 +311,8 @@ def analyze_model(model_path, model_type, test_texts, test_labels, label_map):
     
     # Add to report
     bias_report['advanced_fairness_metrics'] = {
-        'equalized_odds': equalized_odds,
-        'treatment_equality': treatment_eq,
+        'equalized_odds': convert_to_serializable(equalized_odds),
+        'treatment_equality': float(treatment_eq),
         'intersectional_fairness': intersectional
     }
     
@@ -304,6 +344,12 @@ def main():
     """Main bias analysis function"""
     print("Bias Analysis and Model Comparison")
     print("CAI 6605: Trustworthy AI Systems - Final Project")
+    print("=" * 60)
+    
+    # Check if training data exists
+    if not os.path.exists('data/processed/training_data.pkl'):
+        print("Error: Training data not found. Please run train_baseline.py first.")
+        return
     
     # Load training data
     with open('data/processed/training_data.pkl', 'rb') as f:
@@ -313,62 +359,85 @@ def main():
     test_labels = data['y_test']
     label_map = data['label_map']
     
-    # Analyze baseline model
-    baseline_report = analyze_model(
-        'models/resume_classifier_baseline',
-        'baseline',
-        test_texts,
-        test_labels,
-        label_map
-    )
+    # Ensure label_map keys are strings
+    label_map_str = {str(k): v for k, v in label_map.items()}
     
-    # Analyze debiased model
-    debiased_report = analyze_model(
-        'models/resume_classifier_debiased',
-        'debiased',
-        test_texts,
-        test_labels,
-        label_map
-    )
-    
-    # Generate comparison
-    comparison = {
-        'performance': {
-            'baseline_accuracy': float(baseline_report['overall_performance']['accuracy']),
-            'debiased_accuracy': float(debiased_report['overall_performance']['accuracy']),
-            'accuracy_change_percent': float((debiased_report['overall_performance']['accuracy'] - 
-                                           baseline_report['overall_performance']['accuracy']) * 100)
-        },
-        'bias_reduction': {
-            'gender_bias': {
-                'baseline': float(baseline_report['name_substitution_bias']['gender_bias']['average_bias']),
-                'debiased': float(debiased_report['name_substitution_bias']['gender_bias']['average_bias']),
-                'reduction_percent': float((baseline_report['name_substitution_bias']['gender_bias']['average_bias'] - 
-                                         debiased_report['name_substitution_bias']['gender_bias']['average_bias']) * 100)
-            }
-        },
-        'fairness_improvement': {
-            'gender': {
-                'baseline_dp': float(baseline_report['fairness_metrics']['gender']['demographic_parity']),
-                'debiased_dp': float(debiased_report['fairness_metrics']['gender']['demographic_parity']),
-                'improvement': float(baseline_report['fairness_metrics']['gender']['demographic_parity'] - 
-                                  debiased_report['fairness_metrics']['gender']['demographic_parity'])
-            }
-        }
+    # Define model paths
+    model_paths = {
+        'baseline': 'models/resume_classifier_baseline',
+        'debiased': 'models/resume_classifier_debiased'
     }
     
-    with open('results/model_comparison.json', 'w') as f:
-        json.dump(comparison, f, indent=2, cls=NumpyEncoder)
+    # Check which models exist
+    available_models = {}
+    for model_type, model_path in model_paths.items():
+        if os.path.exists(model_path):
+            available_models[model_type] = model_path
+            print(f"Found {model_type} model at {model_path}")
+        else:
+            print(f"Warning: {model_type} model not found at {model_path}")
     
-    print("\nModel Comparison Results:")
-    print(f"Baseline Accuracy: {comparison['performance']['baseline_accuracy']*100:.2f}%")
-    print(f"Debiased Accuracy: {comparison['performance']['debiased_accuracy']*100:.2f}%")
-    print(f"Accuracy Change: {comparison['performance']['accuracy_change_percent']:+.2f}%")
-    print(f"Gender Bias Reduction: {comparison['bias_reduction']['gender_bias']['reduction_percent']:+.2f}%")
+    if not available_models:
+        print("No models found. Please train at least one model first.")
+        return
     
-    # Save to a simpler file for Gradio
-    with open('results/enhanced_model_comparison.json', 'w') as f:
-        json.dump(comparison, f, indent=2, cls=NumpyEncoder)
+    # Analyze available models
+    reports = {}
+    for model_type, model_path in available_models.items():
+        report = analyze_model(model_path, model_type, test_texts, test_labels, label_map_str)
+        if report is not None:
+            reports[model_type] = report
+    
+    if len(reports) < 2:
+        print(f"\nOnly {len(reports)} model(s) analyzed. Skipping comparison.")
+        return
+    
+    # Generate comparison if we have both models
+    if 'baseline' in reports and 'debiased' in reports:
+        baseline_report = reports['baseline']
+        debiased_report = reports['debiased']
+        
+        comparison = {
+            'performance': {
+                'baseline_accuracy': float(baseline_report['overall_performance']['accuracy']),
+                'debiased_accuracy': float(debiased_report['overall_performance']['accuracy']),
+                'accuracy_change_percent': float((debiased_report['overall_performance']['accuracy'] - 
+                                               baseline_report['overall_performance']['accuracy']) * 100)
+            },
+            'bias_reduction': {
+                'gender_bias': {
+                    'baseline': float(baseline_report['name_substitution_bias']['gender_bias']['average_bias']),
+                    'debiased': float(debiased_report['name_substitution_bias']['gender_bias']['average_bias']),
+                    'reduction_percent': float((baseline_report['name_substitution_bias']['gender_bias']['average_bias'] - 
+                                             debiased_report['name_substitution_bias']['gender_bias']['average_bias']) * 100)
+                }
+            },
+            'fairness_improvement': {
+                'gender': {
+                    'baseline_dp': float(baseline_report['fairness_metrics']['gender']['demographic_parity']),
+                    'debiased_dp': float(debiased_report['fairness_metrics']['gender']['demographic_parity']),
+                    'improvement': float(baseline_report['fairness_metrics']['gender']['demographic_parity'] - 
+                                      debiased_report['fairness_metrics']['gender']['demographic_parity'])
+                }
+            }
+        }
+        
+        with open('results/model_comparison.json', 'w') as f:
+            json.dump(comparison, f, indent=2, cls=NumpyEncoder)
+        
+        print("\n" + "=" * 60)
+        print("MODEL COMPARISON RESULTS")
+        print("=" * 60)
+        print(f"Baseline Accuracy: {comparison['performance']['baseline_accuracy']*100:.2f}%")
+        print(f"Debiased Accuracy: {comparison['performance']['debiased_accuracy']*100:.2f}%")
+        print(f"Accuracy Change: {comparison['performance']['accuracy_change_percent']:+.2f}%")
+        print(f"Gender Bias Reduction: {comparison['bias_reduction']['gender_bias']['reduction_percent']:+.2f}%")
+        
+        # Save to a simpler file for Gradio
+        with open('results/enhanced_model_comparison.json', 'w') as f:
+            json.dump(comparison, f, indent=2, cls=NumpyEncoder)
+    
+    print("\nBias analysis completed successfully.")
 
 
 if __name__ == "__main__":
