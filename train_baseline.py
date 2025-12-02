@@ -1,5 +1,8 @@
+# =============================================
+# File: train_baseline.py (FIXED)
+# =============================================
 """
-Baseline Model Training Script
+Optimized Baseline Model Training Script
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
@@ -17,7 +20,7 @@ import pickle
 
 from config import Config
 from data_processor import download_dataset, load_and_preprocess_data, split_data
-from model_trainer import ResumeDataset, EnhancedTrainer, compute_metrics, enhanced_evaluate_model, setup_optimized_model
+from model_trainer import ResumeDataset, EnhancedTrainer, compute_metrics, enhanced_evaluate_model, setup_optimized_model, create_optimizer
 
 
 def setup_environment():
@@ -27,6 +30,26 @@ def setup_environment():
     os.makedirs('models', exist_ok=True)
     os.makedirs('results', exist_ok=True)
     os.makedirs('visualizations', exist_ok=True)
+
+
+def convert_numpy_types(obj):
+    """Convert numpy types to Python native types recursively"""
+    if isinstance(obj, dict):
+        return {str(k): convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_numpy_types(item) for item in obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    else:
+        return obj
 
 
 def save_training_data(X_train, X_val, X_test, y_train, y_val, y_test, label_map):
@@ -45,51 +68,73 @@ def save_training_data(X_train, X_val, X_test, y_train, y_val, y_test, label_map
         pickle.dump(training_data, f)
     
     print("Training data saved for bias analysis")
+    
+    # Also save as JSON for easier inspection (with numpy conversion)
+    summary = {
+        'train_size': len(X_train),
+        'val_size': len(X_val),
+        'test_size': len(X_test),
+        'num_classes': len(label_map),
+        'class_distribution': {
+            'train': dict(zip([str(k) for k in np.unique(y_train)], np.unique(y_train, return_counts=True)[1].tolist())),
+            'val': dict(zip([str(k) for k in np.unique(y_val)], np.unique(y_val, return_counts=True)[1].tolist())),
+            'test': dict(zip([str(k) for k in np.unique(y_test)], np.unique(y_test, return_counts=True)[1].tolist()))
+        }
+    }
+    
+    with open('data/processed/training_data_summary.json', 'w') as f:
+        json.dump(convert_numpy_types(summary), f, indent=2)
 
 
 def print_final_summary(test_results):
-    """Print final project summary"""
+    """Print final project summary with enhanced analysis"""
     print("\n" + "=" * 60)
-    print("BASELINE MODEL TRAINING COMPLETED")
+    print("OPTIMIZED BASELINE MODEL TRAINING COMPLETED")
     print("=" * 60)
     
     accuracy = test_results['eval_accuracy']
+    f1 = test_results['eval_f1']
+    macro_f1 = test_results['eval_macro_f1']
+    
     print(f"Test Accuracy: {accuracy*100:.2f}%")
+    print(f"F1 Score: {f1:.4f}")
+    print(f"Macro F1 Score: {macro_f1:.4f}")
     
     category_accuracies = test_results['per_class_accuracy']
     
+    # Enhanced analysis
     problem_categories = {cat: acc for cat, acc in category_accuracies.items() if acc < 0.7}
-    improved_categories = {cat: acc for cat, acc in category_accuracies.items() if acc > 0.9}
+    good_categories = {cat: acc for cat, acc in category_accuracies.items() if 0.7 <= acc < 0.9}
+    excellent_categories = {cat: acc for cat, acc in category_accuracies.items() if acc >= 0.9}
     
-    print(f"Problem categories (<70%): {len(problem_categories)}")
-    print(f"Excellent categories (>90%): {len(improved_categories)}")
+    print(f"\nCategory Performance Analysis:")
+    print(f"  Problem categories (<70%): {len(problem_categories)}")
+    print(f"  Good categories (70-90%): {len(good_categories)}")
+    print(f"  Excellent categories (>=90%): {len(excellent_categories)}")
     
     if problem_categories:
-        print("Categories needing attention:")
-        for cat, acc in list(problem_categories.items())[:3]:
-            print(f"    {cat}: {acc:.1%}")
+        print("\nCategories needing attention (accuracy < 70%):")
+        for cat, acc in sorted(problem_categories.items(), key=lambda x: x[1]):
+            print(f"    {cat}: {acc*100:.1f}%")
+    
+    if excellent_categories:
+        print("\nTop performing categories (accuracy >= 90%):")
+        for cat, acc in sorted(excellent_categories.items(), key=lambda x: x[1], reverse=True)[:5]:
+            print(f"    {cat}: {acc*100:.1f}%")
+    
+    # Calculate average accuracy for problem categories
+    if problem_categories:
+        avg_problem_accuracy = np.mean(list(problem_categories.values()))
+        print(f"\nAverage accuracy for problematic categories: {avg_problem_accuracy*100:.1f}%")
 
 
 def train_baseline():
-    """Train baseline model"""
-    print("Baseline Resume Classification System Training")
+    """Train optimized baseline model"""
+    print("Optimized Baseline Resume Classification System Training")
     print("CAI 6605: Trustworthy AI Systems - Final Project")
     print("Group 15: Nithin Palyam, Lorenzo LaPlace")
     
-    if hasattr(Config, 'display_enhanced_config'):
-        Config.display_enhanced_config()
-    else:
-        # Fallback if method doesn't exist
-        print("=" * 60)
-        print("BASELINE MODEL CONFIGURATION")
-        print("=" * 60)
-        print(f"Model: {Config.MODEL_NAME}")
-        print(f"Max Length: {Config.MAX_LENGTH} tokens")
-        print(f"Batch Size: {Config.BATCH_SIZE}")
-        print(f"Epochs: {Config.NUM_EPOCHS}")
-        print(f"Learning Rate: {Config.LEARNING_RATE}")
-        print("=" * 60)
-    
+    Config.display_enhanced_config()
     setup_environment()
     
     if not download_dataset():
@@ -105,13 +150,17 @@ def train_baseline():
         df, Config.TEST_SIZE, Config.VAL_SIZE, Config.RANDOM_STATE
     )
     
+    # Convert label_map to string keys for JSON compatibility
+    label_map_str = {str(k): v for k, v in label_map.items()}
+    
+    # Save label maps
     with open('data/processed/enhanced_label_map.json', 'w') as f:
-        json.dump(label_map, f, indent=2)
+        json.dump(label_map_str, f, indent=2)
     
     with open('data/processed/label_map.json', 'w') as f:
-        json.dump(label_map, f, indent=2)
+        json.dump(label_map_str, f, indent=2)
     
-    save_training_data(X_train, X_val, X_test, y_train, y_val, y_test, label_map)
+    save_training_data(X_train, X_val, X_test, y_train, y_val, y_test, label_map_str)
     
     model, tokenizer, device = setup_optimized_model(num_labels, Config.MODEL_NAME)
     
@@ -119,14 +168,18 @@ def train_baseline():
     val_dataset = ResumeDataset(X_val, y_val, tokenizer, Config.MAX_LENGTH)
     test_dataset = ResumeDataset(X_test, y_test, tokenizer, Config.MAX_LENGTH)
     
+    # Enhanced class weighting
     class_weights = compute_class_weight(
         'balanced',
         classes=np.unique(y_train),
         y=y_train
     )
     class_weights = class_weights.astype(np.float32)
-    print("Computed class weights")
     
+    print(f"Computed class weights for {len(class_weights)} classes")
+    print(f"Class weight range: {class_weights.min():.2f} - {class_weights.max():.2f}")
+    
+    # Enhanced training arguments
     training_args = TrainingArguments(
         output_dir=Config.BASELINE_MODEL_PATH,
         num_train_epochs=Config.NUM_EPOCHS,
@@ -135,7 +188,7 @@ def train_baseline():
         learning_rate=Config.LEARNING_RATE,
         warmup_ratio=Config.WARMUP_RATIO,
         weight_decay=Config.WEIGHT_DECAY,
-        gradient_accumulation_steps=Config.GRADIENT_ACCUMULATION_STEPS,
+        gradient_accumulation_steps=1,
         max_grad_norm=Config.MAX_GRAD_NORM,
         eval_strategy="epoch",
         save_strategy="epoch",
@@ -147,7 +200,8 @@ def train_baseline():
         seed=Config.RANDOM_STATE,
         report_to="none",
         dataloader_pin_memory=False,
-        save_total_limit=2
+        save_total_limit=2,
+        label_names=["labels"]
     )
     
     early_stopping = EarlyStoppingCallback(
@@ -165,25 +219,50 @@ def train_baseline():
         callbacks=[early_stopping]
     )
     
-    print("Baseline Model Training")
+    print("\nOptimized Baseline Model Training")
+    print(f"Training samples: {len(train_dataset)}")
+    print(f"Validation samples: {len(val_dataset)}")
+    print(f"Test samples: {len(test_dataset)}")
+    
     trainer.train()
-    print("Baseline Model Training Complete")
+    print("Optimized Baseline Model Training Complete")
     
     trainer.save_model(Config.BASELINE_MODEL_PATH)
     tokenizer.save_pretrained(Config.BASELINE_MODEL_PATH)
-    print(f"Baseline model saved to {Config.BASELINE_MODEL_PATH}")
+    print(f"Optimized baseline model saved to {Config.BASELINE_MODEL_PATH}")
     
-    test_results = enhanced_evaluate_model(trainer, test_dataset, label_map)
+    # Enhanced evaluation
+    test_results = enhanced_evaluate_model(trainer, test_dataset, label_map_str)
     
-    with open('results/baseline_training_results.json', 'w') as f:
-        json.dump(test_results, f, indent=2)
+    # Convert numpy types before saving
+    test_results_serializable = convert_numpy_types(test_results)
+    
+    # Save results
+    with open('results/optimized_baseline_training_results.json', 'w') as f:
+        json.dump(test_results_serializable, f, indent=2)
     
     with open('results/training_results.json', 'w') as f:
-        json.dump(test_results, f, indent=2)
+        json.dump(test_results_serializable, f, indent=2)
     
-    print_final_summary(test_results)
+    print_final_summary(test_results_serializable)
     
-    return trainer, tokenizer, test_results
+    # Calculate and save additional statistics
+    stats = {
+        'model_name': Config.MODEL_NAME,
+        'num_parameters': sum(p.numel() for p in model.parameters()),
+        'num_trainable_parameters': sum(p.numel() for p in model.parameters() if p.requires_grad),
+        'config': {
+            'batch_size': Config.BATCH_SIZE,
+            'learning_rate': Config.LEARNING_RATE,
+            'epochs': Config.NUM_EPOCHS,
+            'dropout': Config.DROPOUT_RATE
+        }
+    }
+    
+    with open('results/model_statistics.json', 'w') as f:
+        json.dump(stats, f, indent=2)
+    
+    return trainer, tokenizer, test_results_serializable
 
 
 if __name__ == "__main__":
