@@ -1,5 +1,5 @@
 """
-Enhanced Data Processing Module for Resume Classification System
+Optimized Enhanced Data Processing Module for Resume Classification System
 CAI 6605 - Trustworthy AI Systems - Final Project
 Group 15: Nithin Palyam, Lorenzo LaPlace
 """
@@ -14,6 +14,7 @@ from sklearn.preprocessing import LabelEncoder
 from imblearn.over_sampling import SMOTE
 import json
 from collections import Counter
+import nlpaug.augmenter.word as naw
 
 
 class ResumePreprocessor:
@@ -25,22 +26,32 @@ class ResumePreprocessor:
         self.phone_pattern = re.compile(r'[\+\(]?[1-9][0-9 .\-\(\)]{8,}[0-9]')
         self.special_chars = re.compile(r'[^a-zA-Z0-9\s\.,;:!?\-]')
         
-        # Demographic indicators to remove
+        # Enhanced demographic indicators to remove
         self.gender_indicators = [
             'he', 'she', 'him', 'her', 'his', 'hers',
             'mr', 'mrs', 'ms', 'miss', 'sir', 'madam',
             'father', 'mother', 'husband', 'wife',
-            'brother', 'sister', 'son', 'daughter'
+            'brother', 'sister', 'son', 'daughter',
+            'male', 'female', 'man', 'woman', 'men', 'women',
+            'boy', 'girl', 'gentleman', 'lady'
         ]
         
         self.privilege_indicators = [
-            'harvard', 'stanford', 'mit', 'princeton', 'yale',
+            'harvard', 'stanford', 'mit', 'princeton', 'yale', 'columbia',
             'oxford', 'cambridge', 'ivy league', 'goldman sachs',
-            'mckinsey', 'google', 'microsoft', 'apple'
+            'mckinsey', 'bain', 'boston consulting', 'google',
+            'microsoft', 'apple', 'amazon', 'meta', 'facebook'
+        ]
+        
+        # Names for removal
+        self.common_names = [
+            'john', 'jane', 'michael', 'sarah', 'david', 'emily',
+            'james', 'jennifer', 'robert', 'lisa', 'william', 'mary',
+            'richard', 'patricia', 'joseph', 'linda', 'thomas', 'barbara'
         ]
 
     def clean_text(self, text):
-        """Clean text with demographic signal removal"""
+        """Clean text with enhanced demographic signal removal"""
         if not isinstance(text, str):
             return ""
         
@@ -58,6 +69,10 @@ class ResumePreprocessor:
         for indicator in self.privilege_indicators:
             text = re.sub(r'\b' + indicator + r'\b', ' ', text)
         
+        # Remove common names
+        for name in self.common_names:
+            text = re.sub(r'\b' + name + r'\b', ' ', text)
+        
         # Remove special characters
         text = self.special_chars.sub(' ', text)
         
@@ -71,11 +86,14 @@ class ResumePreprocessor:
         text_lower = text.lower()
         
         technical_skills = {
-            'programming': ['python', 'java', 'javascript', 'c++', 'c#'],
-            'web': ['html', 'css', 'react', 'angular', 'vue'],
-            'data_science': ['machine learning', 'deep learning', 'tensorflow'],
-            'cloud': ['aws', 'azure', 'gcp', 'docker', 'kubernetes'],
-            'database': ['sql', 'mysql', 'postgresql', 'mongodb']
+            'programming': ['python', 'java', 'javascript', 'c++', 'c#', 'ruby', 'go', 'swift', 'kotlin'],
+            'web': ['html', 'css', 'react', 'angular', 'vue', 'node.js', 'django', 'flask', 'spring'],
+            'data_science': ['machine learning', 'deep learning', 'tensorflow', 'pytorch', 'keras', 'scikit-learn'],
+            'cloud': ['aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform', 'ansible'],
+            'database': ['sql', 'mysql', 'postgresql', 'mongodb', 'redis', 'oracle', 'cassandra'],
+            'devops': ['ci/cd', 'jenkins', 'gitlab', 'github actions', 'monitoring', 'logging'],
+            'mobile': ['android', 'ios', 'react native', 'flutter', 'xcode'],
+            'business': ['project management', 'agile', 'scrum', 'stakeholder', 'strategy']
         }
         
         features = []
@@ -84,6 +102,22 @@ class ResumePreprocessor:
             found_skills = [skill for skill in skills if skill in text_lower]
             if found_skills:
                 features.extend(found_skills)
+        
+        # Add experience level detection
+        experience_patterns = [
+            r'(\d+)\+?\s+years',
+            r'(\d+)\s*-\s*(\d+)\s+years',
+            r'senior\s+\w+',
+            r'junior\s+\w+',
+            r'entry[\s-]level',
+            r'mid[\s-]level',
+            r'experienced\s+\w+'
+        ]
+        
+        for pattern in experience_patterns:
+            if re.search(pattern, text_lower):
+                features.append('experience_mentioned')
+                break
         
         return ' '.join(features)
 
@@ -110,59 +144,115 @@ def download_dataset():
         return True
 
 
-def enhanced_balance_dataset(df, target_col='Category'):
-    """Balance dataset with targeted augmentation - FIXED VERSION"""
-    print("Applying dataset balancing with targeted augmentation...")
+class DataAugmenter:
+    """Enhanced data augmentation for underperforming categories"""
     
-    underperforming_categories = ['BPO', 'AUTOMOBILE', 'APPAREL', 'DIGITAL-MEDIA']
+    def __init__(self):
+        try:
+            # Use synonym augmentation
+            self.aug = naw.SynonymAug(aug_src='wordnet')
+        except:
+            self.aug = None
+    
+    def augment_text(self, text, n=3):
+        """Generate augmented versions of text"""
+        if self.aug is None:
+            # Fallback simple augmentation
+            words = text.split()
+            augmented_texts = []
+            for _ in range(n):
+                np.random.shuffle(words[:min(20, len(words))])
+                augmented_texts.append(' '.join(words))
+            return augmented_texts
+        
+        try:
+            return [self.aug.augment(text) for _ in range(n)]
+        except:
+            return [text] * n
+
+
+def enhanced_balance_dataset(df, target_col='Category'):
+    """Enhanced dataset balancing with targeted augmentation"""
+    print("Applying enhanced dataset balancing with targeted augmentation...")
+    
+    from config import Config
+    augmenter = DataAugmenter()
+    
+    target_categories = Config.TARGET_AUGMENTATION_CATEGORIES
     
     # Get category distribution
     category_counts = df[target_col].value_counts()
+    max_count = category_counts.max()
+    min_samples = Config.MIN_SAMPLES_PER_CATEGORY
     
-    balanced_indices = []
+    balanced_dfs = []
     
-    for category in category_counts.index:
-        category_indices = df[df[target_col] == category].index.tolist()
-        needed_count = max(category_counts.values())
+    for category in df[target_col].unique():
+        category_df = df[df[target_col] == category].copy()
+        current_count = len(category_df)
         
-        if len(category_indices) < needed_count:
-            duplicates_needed = needed_count - len(category_indices)
-            
-            # For underperforming categories, use augmentation
-            if category in underperforming_categories and duplicates_needed > 0:
-                augmented_indices = []
-                for i in range(duplicates_needed):
-                    original_idx = np.random.choice(category_indices)
-                    augmented_indices.append(original_idx)
-                
-                balanced_indices.extend(category_indices)
-                balanced_indices.extend(augmented_indices)
-            else:
-                duplicated = np.random.choice(category_indices, duplicates_needed, replace=True)
-                balanced_indices.extend(category_indices)
-                balanced_indices.extend(duplicated.tolist())
+        # Determine target count
+        if category in target_categories:
+            target_count = max(max_count, min_samples * 3)
         else:
-            balanced_indices.extend(category_indices[:needed_count])
+            target_count = max_count
+        
+        if current_count < target_count:
+            needed = target_count - current_count
+            
+            # For target categories, use augmentation
+            if category in target_categories and needed > 0:
+                augmented_samples = []
+                for idx in category_df.index[:min(10, len(category_df))]:
+                    text = df.loc[idx, 'Resume_str' if 'Resume_str' in df.columns else 'Resume']
+                    augmented_texts = augmenter.augment_text(text, n=min(5, needed // 10 + 1))
+                    
+                    for aug_text in augmented_texts:
+                        if len(augmented_samples) >= needed:
+                            break
+                        new_sample = category_df.loc[[idx]].copy()
+                        new_sample['Resume_str' if 'Resume_str' in new_sample.columns else 'Resume'] = aug_text
+                        augmented_samples.append(new_sample)
+                
+                if augmented_samples:
+                    augmented_df = pd.concat(augmented_samples, ignore_index=True)
+                    category_df = pd.concat([category_df, augmented_df], ignore_index=True)
+            
+            # If still needed, duplicate
+            if len(category_df) < target_count:
+                additional_needed = target_count - len(category_df)
+                duplicated = category_df.sample(n=additional_needed, replace=True, random_state=42)
+                category_df = pd.concat([category_df, duplicated], ignore_index=True)
+        
+        balanced_dfs.append(category_df)
     
-    balanced_df = df.iloc[balanced_indices].copy()
-    balanced_df.reset_index(drop=True, inplace=True)
+    balanced_df = pd.concat(balanced_dfs, ignore_index=True)
     
     print(f"Dataset balancing complete: {len(df)} -> {len(balanced_df)} samples")
+    print(f"New distribution: {balanced_df[target_col].value_counts().to_dict()}")
     
     return balanced_df
 
 
 def analyze_and_fix_class_imbalance(df, category_col='Category'):
-    """Comprehensive class imbalance analysis and fixing - FIXED VERSION"""
+    """Enhanced class imbalance analysis and fixing"""
+    from config import Config
+    
     category_counts = df[category_col].value_counts()
     
-    print("Class Imbalance Analysis & Fixing")
+    print("Enhanced Class Imbalance Analysis")
     print("=" * 60)
     
-    problem_classes = category_counts[category_counts < 10]
-    if len(problem_classes) > 0:
-        print(f"Critical: {len(problem_classes)} classes have < 10 samples:")
-        for cls, count in problem_classes.items():
+    # Identify problematic categories
+    problem_classes = category_counts[category_counts < Config.MIN_SAMPLES_PER_CATEGORY].index.tolist()
+    low_performance_classes = Config.TARGET_AUGMENTATION_CATEGORIES
+    
+    all_problem_classes = list(set(problem_classes + low_performance_classes))
+    
+    if all_problem_classes:
+        print(f"Identified {len(all_problem_classes)} classes for enhancement:")
+        for cls in all_problem_classes:
+            count = category_counts.get(cls, 0)
             print(f"  {cls}: {count} samples")
         
         df_balanced = enhanced_balance_dataset(df, category_col)
@@ -173,8 +263,8 @@ def analyze_and_fix_class_imbalance(df, category_col='Category'):
 
 
 def load_and_preprocess_data(data_path):
-    """Load and preprocess resume data - FIXED VERSION"""
-    print("Enhanced Data Processing")
+    """Load and preprocess resume data with enhanced processing"""
+    print("Enhanced Data Processing with Advanced Features")
     print("=" * 60)
     
     try:
@@ -189,11 +279,11 @@ def load_and_preprocess_data(data_path):
         print("Cleaning and enhancing text data...")
         df['cleaned_text'] = df[resume_col].apply(preprocessor.clean_text)
         df['enhanced_features'] = df[resume_col].apply(preprocessor.extract_enhanced_features)
-        df['enhanced_text'] = df['cleaned_text'] + ' ' + df['enhanced_features']
+        df['combined_text'] = df['cleaned_text'] + ' ' + df['enhanced_features']
         
         # Filter short resumes
         initial_count = len(df)
-        df = df[df['cleaned_text'].str.len() > 50]
+        df = df[df['cleaned_text'].str.len() > 100]  # Increased from 50
         filtered_count = initial_count - len(df)
         
         if filtered_count > 0:
@@ -201,19 +291,24 @@ def load_and_preprocess_data(data_path):
         
         print(f"Final dataset: {len(df)} resumes")
         
-        # FIRST: Analyze and fix class imbalance using Category column
+        # Enhanced class imbalance handling
         df = analyze_and_fix_class_imbalance(df)
         
-        # THEN: Encode labels
+        # Encode labels
         label_encoder = LabelEncoder()
         df['label'] = label_encoder.fit_transform(df['Category'])
-        label_map = {i: cat for i, cat in enumerate(label_encoder.classes_)}
+        label_map = {str(i): cat for i, cat in enumerate(label_encoder.classes_)}  # Convert keys to strings
         num_labels = len(label_map)
         
-        print(f"Class Distribution:")
+        print(f"Enhanced Class Distribution:")
         category_counts = df['Category'].value_counts()
-        for category, count in category_counts.head(10).items():
+        for category, count in category_counts.items():
             print(f"  {category:25s}: {count:3d} samples")
+        
+        # Calculate and print statistics
+        print(f"\nStatistics:")
+        print(f"  Average text length: {df['cleaned_text'].str.len().mean():.0f} characters")
+        print(f"  Number of categories: {num_labels}")
         
         return df, label_map, num_labels
         
@@ -225,10 +320,18 @@ def load_and_preprocess_data(data_path):
 
 
 def split_data(df, test_size=0.15, val_size=0.15, random_state=42):
-    """Split data into train, validation, and test sets"""
-    texts = df['enhanced_text'].tolist()
+    """Split data into train, validation, and test sets with stratification"""
+    texts = df['combined_text'].tolist()
     labels = df['label'].tolist()
     categories = df['Category'].tolist()
+    
+    # Ensure stratification works for all categories
+    min_samples_for_stratify = 2
+    category_counts = Counter(categories)
+    valid_categories = [cat for cat, count in category_counts.items() if count >= min_samples_for_stratify]
+    
+    if len(valid_categories) < len(category_counts):
+        print(f"Warning: Some categories have fewer than {min_samples_for_stratify} samples")
     
     X_temp, X_test, y_temp, y_test, cat_temp, cat_test = train_test_split(
         texts, labels, categories,
