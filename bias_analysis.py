@@ -10,6 +10,7 @@ import os
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from bias_analyzer import BiasAnalyzer, DemographicInference
 from sklearn.preprocessing import LabelEncoder
+from fairness_metrics import FairnessMetrics
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -45,142 +46,6 @@ def convert_to_serializable(obj):
         return bool(obj)
     else:
         return obj
-
-
-class FairnessMetrics:
-    """Fairness metrics for multi-class classification"""
-    
-    @staticmethod
-    def equalized_odds_difference(y_true, y_pred, protected_attr, num_classes):
-        """
-        Equalized Odds: Equal TPR and FPR across groups
-        Returns maximum difference in TPR and FPR across groups
-        """
-        protected_attr = np.array(protected_attr)
-        y_true = np.array(y_true)
-        y_pred = np.array(y_pred)
-        
-        groups = np.unique(protected_attr)
-        group_metrics = {}
-        
-        for group in groups:
-            group_mask = protected_attr == group
-            if np.sum(group_mask) > 0:
-                y_true_group = y_true[group_mask]
-                y_pred_group = y_pred[group_mask]
-                
-                tpr_list = []
-                fpr_list = []
-                
-                for cls in range(num_classes):
-                    tp = np.sum((y_true_group == cls) & (y_pred_group == cls))
-                    fn = np.sum((y_true_group == cls) & (y_pred_group != cls))
-                    tpr = tp / (tp + fn) if (tp + fn) > 0 else 0
-                    tpr_list.append(tpr)
-                    
-                    fp = np.sum((y_true_group != cls) & (y_pred_group == cls))
-                    tn = np.sum((y_true_group != cls) & (y_pred_group != cls))
-                    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
-                    fpr_list.append(fpr)
-                
-                group_metrics[group] = {
-                    'tpr': np.mean(tpr_list),
-                    'fpr': np.mean(fpr_list)
-                }
-        
-        tpr_values = [metrics['tpr'] for metrics in group_metrics.values()]
-        fpr_values = [metrics['fpr'] for metrics in group_metrics.values()]
-        
-        tpr_diff = max(tpr_values) - min(tpr_values) if tpr_values else 0
-        fpr_diff = max(fpr_values) - min(fpr_values) if fpr_values else 0
-        
-        return {
-            'equalized_odds_difference': max(tpr_diff, fpr_diff),
-            'tpr_difference': tpr_diff,
-            'fpr_difference': fpr_diff
-        }
-    
-    @staticmethod
-    def treatment_equality_ratio(y_true, y_pred, protected_attr):
-        """
-        Treatment Equality: Ratio of false positive to false negative rates
-        Should be equal across groups
-        """
-        protected_attr = np.array(protected_attr)
-        y_true = np.array(y_true)
-        y_pred = np.array(y_pred)
-        
-        groups = np.unique(protected_attr)
-        group_ratios = []
-        
-        for group in groups:
-            group_mask = protected_attr == group
-            if np.sum(group_mask) > 0:
-                y_true_group = y_true[group_mask]
-                y_pred_group = y_pred[group_mask]
-                
-                fp = np.sum((y_true_group != y_pred_group) & (y_pred_group != -1))
-                fn = np.sum((y_true_group != y_pred_group) & (y_pred_group == -1))
-                
-                ratio = fp / fn if fn > 0 else float('inf')
-                group_ratios.append(ratio)
-        
-        valid_ratios = [r for r in group_ratios if r != float('inf')]
-        if len(valid_ratios) >= 2:
-            max_ratio = max(valid_ratios)
-            min_ratio = min(valid_ratios)
-            if max_ratio > 0:
-                normalized_diff = (max_ratio - min_ratio) / max_ratio
-            else:
-                normalized_diff = 0
-        else:
-            normalized_diff = 0
-        
-        return normalized_diff
-    
-    @staticmethod
-    def intersectional_fairness(y_true, y_pred, protected_attrs_dict):
-        """
-        Intersectional fairness across multiple protected attributes
-        protected_attrs_dict: dictionary of protected attributes
-        """
-        protected_names = list(protected_attrs_dict.keys())
-        protected_values = list(protected_attrs_dict.values())
-        
-        intersectional_groups = set(zip(*protected_values))
-        
-        group_accuracies = {}
-        
-        for combo in intersectional_groups:
-            group_mask = np.ones(len(y_true), dtype=bool)
-            for i, values in enumerate(protected_values):
-                group_mask &= (np.array(values) == combo[i])
-            
-            if np.sum(group_mask) > 0:
-                y_true_group = y_true[group_mask]
-                y_pred_group = y_pred[group_mask]
-                
-                accuracy = np.mean(y_true_group == y_pred_group)
-                group_name = "_".join([f"{protected_names[i]}_{combo[i]}" 
-                                      for i in range(len(combo))])
-                group_accuracies[group_name] = {
-                    'accuracy': float(accuracy),
-                    'size': int(np.sum(group_mask))
-                }
-        
-        if group_accuracies:
-            accuracies = [info['accuracy'] for info in group_accuracies.values()]
-            fairness_score = 1 - (max(accuracies) - min(accuracies))
-        else:
-            fairness_score = 1
-        
-        return {
-            'intersectional_fairness': float(fairness_score),
-            'group_accuracies': group_accuracies,
-            'min_accuracy': float(min(accuracies)) if group_accuracies else 0,
-            'max_accuracy': float(max(accuracies)) if group_accuracies else 0,
-            'accuracy_range': float(max(accuracies) - min(accuracies)) if group_accuracies else 0
-        }
 
 
 def analyze_model(model_path, model_type, test_texts, test_labels, label_map):
@@ -241,12 +106,20 @@ def analyze_model(model_path, model_type, test_texts, test_labels, label_map):
     analyzer = BiasAnalyzer(model, tokenizer, label_map, device)
     bias_report = analyzer.bias_analysis(test_texts, test_labels, predictions)
     
-    fairness_metrics = FairnessMetrics()
+    # Create an instance of FairnessMetrics
+    fairness_calculator = FairnessMetrics()
     
+    # Infer demographics
     demo_inference = DemographicInference()
-    genders = [demo_inference.infer_gender(text) for text in test_texts]
-    races = [demo_inference.infer_race_from_names(text) for text in test_texts]
+    genders = []
+    races = []
     
+    for text in test_texts:
+        demo = demo_inference.infer_demographics(text)
+        genders.append(demo['gender'])
+        races.append(demo['race'])
+    
+    # Encode categorical variables
     gender_encoder = LabelEncoder()
     race_encoder = LabelEncoder()
     gender_encoded = gender_encoder.fit_transform(genders)
@@ -254,55 +127,93 @@ def analyze_model(model_path, model_type, test_texts, test_labels, label_map):
     
     num_classes = len(label_map)
     
-    equalized_odds = fairness_metrics.equalized_odds_difference(
-        np.array(test_labels),
-        np.array(predictions),
-        gender_encoded,
-        num_classes
-    )
+    # Calculate comprehensive fairness metrics
+    try:
+        equalized_odds = fairness_calculator.equalized_odds_difference(
+            np.array(test_labels),
+            np.array(predictions),
+            gender_encoded,
+            num_classes
+        )
+    except Exception as e:
+        print(f"Error calculating equalized odds: {e}")
+        equalized_odds = {'equalized_odds_difference': 0.0, 'tpr_difference': 0.0, 'fpr_difference': 0.0}
     
-    treatment_eq = fairness_metrics.treatment_equality_ratio(
-        np.array(test_labels),
-        np.array(predictions),
-        gender_encoded
-    )
+    # Also calculate for race
+    try:
+        equalized_odds_race = fairness_calculator.equalized_odds_difference(
+            np.array(test_labels),
+            np.array(predictions),
+            race_encoded,
+            num_classes
+        )
+    except Exception as e:
+        print(f"Error calculating equalized odds for race: {e}")
+        equalized_odds_race = {'equalized_odds_difference': 0.0, 'tpr_difference': 0.0, 'fpr_difference': 0.0}
     
-    protected_dict = {
-        'gender': genders,
-        'race': races
-    }
-    intersectional = fairness_metrics.intersectional_fairness(
-        np.array(test_labels),
-        np.array(predictions),
-        protected_dict
-    )
+    try:
+        treatment_eq = fairness_calculator.treatment_equality_ratio(
+            np.array(test_labels),
+            np.array(predictions),
+            gender_encoded
+        )
+    except Exception as e:
+        print(f"Error calculating treatment equality: {e}")
+        treatment_eq = 0.0
     
-    bias_report['advanced_fairness_metrics'] = {
-        'equalized_odds': convert_to_serializable(equalized_odds),
+    # Calculate demographic parity
+    try:
+        demo_parity_gender = FairnessMetrics.demographic_parity_difference(
+            np.array(predictions),
+            gender_encoded
+        )
+    except Exception as e:
+        print(f"Error calculating demographic parity for gender: {e}")
+        demo_parity_gender = 0.0
+    
+    try:
+        demo_parity_race = FairnessMetrics.demographic_parity_difference(
+            np.array(predictions),
+            race_encoded
+        )
+    except Exception as e:
+        print(f"Error calculating demographic parity for race: {e}")
+        demo_parity_race = 0.0
+    
+    # Calculate intersectional fairness
+    try:
+        protected_dict = {
+            'gender': genders,
+            'race': races
+        }
+        intersectional = fairness_calculator.intersectional_fairness(
+            np.array(test_labels),
+            np.array(predictions),
+            protected_dict
+        )
+    except Exception as e:
+        print(f"Error calculating intersectional fairness: {e}")
+        intersectional = {'intersectional_fairness': 0.0, 'group_accuracies': {}, 'min_accuracy': 0.0, 'max_accuracy': 0.0, 'accuracy_range': 0.0}
+    
+    # Combine all metrics
+    bias_report['fairness_metrics_detailed'] = {
+        'equalized_odds_gender': convert_to_serializable(equalized_odds),
+        'equalized_odds_race': convert_to_serializable(equalized_odds_race),
         'treatment_equality': float(treatment_eq),
-        'intersectional_fairness': intersectional
+        'demographic_parity_gender': float(demo_parity_gender),
+        'demographic_parity_race': float(demo_parity_race),
+        'intersectional_fairness': intersectional,
     }
     
-    print(f"\nAdvanced Fairness Metrics for {model_type}:")
-    print(f"Equalized Odds Difference: {equalized_odds.get('equalized_odds_difference', 0):.3f}")
-    print(f"  TPR Difference: {equalized_odds.get('tpr_difference', 0):.3f}")
-    print(f"  FPR Difference: {equalized_odds.get('fpr_difference', 0):.3f}")
-    print(f"Treatment Equality Ratio: {treatment_eq:.3f}")
-    print(f"Intersectional Fairness: {intersectional.get('intersectional_fairness', 0):.3f}")
-    if 'min_accuracy' in intersectional:
-        print(f"  Min Group Accuracy: {intersectional.get('min_accuracy', 0)*100:.1f}%")
-        print(f"  Max Group Accuracy: {intersectional.get('max_accuracy', 0)*100:.1f}%")
-        print(f"  Accuracy Range: {intersectional.get('accuracy_range', 0)*100:.1f}%")
+    # Print detailed analysis
+    print(f"\nDetailed Fairness Analysis for {model_type}:")
+    print(f"Gender Demographic Parity: {demo_parity_gender:.3f}")
+    print(f"Race Demographic Parity: {demo_parity_race:.3f}")
+    print(f"Gender Equalized Odds Difference: {equalized_odds.get('equalized_odds_difference', 0):.3f}")
+    print(f"Race Equalized Odds Difference: {equalized_odds_race.get('equalized_odds_difference', 0):.3f}")
+    print(f"Intersectional Fairness Score: {intersectional.get('intersectional_fairness', 0):.3f}")
     
-    bias_report_serializable = convert_to_serializable(bias_report)
-    
-    report_path = f'results/{model_type}_bias_report.json'
-    with open(report_path, 'w') as f:
-        json.dump(bias_report_serializable, f, indent=2, cls=NumpyEncoder)
-    
-    print(f"Bias report saved to {report_path}")
-    return bias_report_serializable
-
+    return bias_report
 
 def compare_models(baseline_report, debiased_report):
     """Compare baseline and debiased models"""
@@ -368,24 +279,34 @@ def compare_models(baseline_report, debiased_report):
     accuracy_change = comparison['performance']['accuracy_change_percent']
     gender_bias_reduction = comparison['bias_reduction']['gender_bias']['reduction_percent']
     racial_bias_reduction = comparison['bias_reduction']['racial_bias']['reduction_percent']
-
-    # NEW: Handle negative reduction (increased bias)
+    
+    # Get fairness metrics from detailed section
+    baseline_detailed = baseline_report.get('fairness_metrics_detailed', {})
+    debiased_detailed = debiased_report.get('fairness_metrics_detailed', {})
+    
+    # Calculate improvement in advanced metrics
+    if 'equalized_odds_gender' in baseline_detailed and 'equalized_odds_gender' in debiased_detailed:
+        equalized_odds_improvement = (
+            baseline_detailed['equalized_odds_gender'].get('equalized_odds_difference', 0) -
+            debiased_detailed['equalized_odds_gender'].get('equalized_odds_difference', 0)
+        )
+    else:
+        equalized_odds_improvement = 0
+    
+    if 'intersectional_fairness' in baseline_detailed and 'intersectional_fairness' in debiased_detailed:
+        intersectional_improvement = (
+            debiased_detailed['intersectional_fairness'].get('intersectional_fairness', 0) -
+            baseline_detailed['intersectional_fairness'].get('intersectional_fairness', 0)
+        )
+    else:
+        intersectional_improvement = 0
+    
+    # Handle negative reduction (increased bias)
     if racial_bias_reduction < 0:  # Bias increased
         racial_bias_change = "increased"
     else:
         racial_bias_change = "reduced"
-
-    # Calculate improvement in advanced metrics
-    equalized_odds_improvement = (
-        baseline_report['advanced_fairness_metrics']['equalized_odds']['equalized_odds_difference'] -
-        debiased_report['advanced_fairness_metrics']['equalized_odds']['equalized_odds_difference']
-    )
-
-    intersectional_improvement = (
-        debiased_report['advanced_fairness_metrics']['intersectional_fairness']['intersectional_fairness'] -
-        baseline_report['advanced_fairness_metrics']['intersectional_fairness']['intersectional_fairness']
-    )
-
+    
     # NEW IMPROVED LOGIC
     if accuracy_change > 0 and intersectional_improvement > 0.03 and equalized_odds_improvement > 0:
         rating = "Excellent"
