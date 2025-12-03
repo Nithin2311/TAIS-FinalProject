@@ -80,219 +80,258 @@ class LimeExplainer:
 
 
 class DemographicInference:
-    """Demographic inference from resume text"""
+    """Demographic inference from resume text - FIXED VERSION"""
     
     def __init__(self):
+        # More comprehensive gender patterns
         self.gender_patterns = {
             'male': [
                 r'\bhe\b', r'\bhim\b', r'\bhis\b', r'\bmale\b', r'\bman\b', r'\bmen\b',
                 r'\bboy\b', r'\bmr\.', r'\bmr\b', r'\bmister\b', r'\bfather\b', r'\bhusband\b',
-                r'\bbrother\b', r'\bson\b', r'\bgentleman\b'
+                r'\bbrother\b', r'\bson\b', r'\bgentleman\b', r'\bmale\b',
+                r'\bguy\b', r'\bsir\b', r'\bmale-identifying\b', r'\bmasculine\b'
             ],
             'female': [
                 r'\bshe\b', r'\bher\b', r'\bhers\b', r'\bfemale\b', r'\bwoman\b', r'\bwomen\b',
                 r'\bgirl\b', r'\bms\.', r'\bms\b', r'\bmiss\b', r'\bmrs\.', r'\bmrs\b',
-                r'\bmother\b', r'\bwife\b', r'\bsister\b', r'\bdaughter\b', r'\blady\b'
+                r'\bmother\b', r'\bwife\b', r'\bsister\b', r'\bdaughter\b', r'\blady\b',
+                r'\bfemale\b', r'\bgal\b', r'\bmadam\b', r'\bfemale-identifying\b', r'\bfeminine\b'
             ]
         }
         
-        self.age_indicators = {
-            'experience_years': [r'(\d+)\s+years', r'(\d+)\+ years', r'(\d+)-(\d+) years'],
-            'graduation_years': [r'class of (\d{4})', r'graduated (\d{4})', r'\b(\d{4})\s*-\s*(\d{4})'],
-            'age_phrases': ['recent graduate', 'entry level', 'junior', 'senior', 'experienced', 'veteran']
-        }
-        
-        self.race_name_patterns = {
-            'black': ['lakisha', 'latoya', 'tamika', 'imani', 'ebony', 'darnell',
-                     'jermaine', 'tyrone', 'deshawn', 'marquis', 'shanice', 'aaliyah'],
-            'white': ['emily', 'anne', 'jill', 'allison', 'laurie', 'neil',
-                     'geoffrey', 'brett', 'greg', 'matthew', 'katie', 'megan'],
-            'asian': ['wei', 'jing', 'li', 'zhang', 'wang', 'chen',
-                     'yong', 'min', 'hui', 'xiao', 'mei', 'lin'],
-            'hispanic': ['jose', 'carlos', 'luis', 'juan', 'miguel', 'rosa',
-                        'maria', 'carmen', 'ana', 'dolores', 'sofia', 'isabella']
-        }
-        
-        # ADDED: Job-related keyword patterns for anonymized resumes
-        self.job_gender_patterns = {
-            'male_leaning': [
-                'football', 'basketball', 'baseball', 'hockey', 'golf', 'fishing', 'hunting',
-                'military', 'marine', 'navy', 'army', 'combat', 'veteran',
-                'engineering', 'mechanical', 'electrical', 'construction', 'contractor',
-                'programming', 'coding', 'software', 'algorithm', 'hackathon', 'devops',
-                'physics', 'mathematics', 'calculus', 'quantum', 'statistics',
-                'motorcycle', 'cars', 'automotive', 'welding', 'carpentry'
-            ],
-            'female_leaning': [
-                'nursing', 'caregiving', 'childcare', 'preschool', 'kindergarten',
-                'counseling', 'therapy', 'social work', 'human resources', 'hr',
-                'public relations', 'event planning', 'interior design', 'decorating',
-                'early childhood', 'family therapy', 'community outreach', 'volunteer',
-                'teaching', 'education', 'curriculum', 'pedagogy', 'tutoring',
-                'administrative', 'receptionist', 'secretarial', 'office manager',
-                'fashion', 'beauty', 'cosmetology', 'hairstyling', 'makeup'
-            ]
-        }
-    
-    def infer_gender(self, text):
-        """Infer gender from text using pronouns and job-related keywords"""
-        text_lower = text.lower()
-        
-        male_score = 0
-        female_score = 0
-        
-        # Check pronouns
-        for pattern in self.gender_patterns['male']:
-            male_score += len(re.findall(pattern, text_lower))
-        
-        for pattern in self.gender_patterns['female']:
-            female_score += len(re.findall(pattern, text_lower))
-        
-        # Check job-related keywords (for anonymized resumes)
-        for keyword in self.job_gender_patterns['male_leaning']:
-            if keyword in text_lower:
-                male_score += 1
-        
-        for keyword in self.job_gender_patterns['female_leaning']:
-            if keyword in text_lower:
-                female_score += 1
-        
-        if male_score > female_score:
-            return 'male'
-        elif female_score > male_score:
-            return 'female'
-        else:
-            return 'unknown'
-    
-    def infer_race_from_names(self, text):
-        """Infer race/ethnicity from names in text - improved version"""
-        text_lower = text.lower()
-        
-        # Enhanced name patterns with more comprehensive lists
+        # Enhanced race/ethnicity name patterns
         self.race_name_patterns = {
             'black': [
                 'darnell', 'lakisha', 'latoya', 'tamika', 'imani', 'ebony', 
                 'jermaine', 'tyrone', 'deshawn', 'marquis', 'shanice', 'aaliyah',
-                'kareem', 'latonya', 'tyrell', 'shaniqua', 'deandre', 'keisha',
-                'jamal', 'tanisha', 'malik', 'tia', 'darius', 'lashonda'
+                'keisha', 'jamal', 'latonya', 'tyrell', 'shaniqua', 'deandre',
+                'tanisha', 'malik', 'kareem', 'darius', 'lashonda', 'precious',
+                'tremayne', 'quintavius', 'lakendra', 'tamiko', 'desiree'
             ],
             'white': [
                 'emily', 'anne', 'jill', 'allison', 'laurie', 'neil',
                 'geoffrey', 'brett', 'greg', 'matthew', 'katie', 'megan',
                 'james', 'robert', 'john', 'michael', 'david', 'william',
                 'richard', 'joseph', 'thomas', 'christopher', 'daniel',
-                'mary', 'patricia', 'jennifer', 'linda', 'elizabeth'
+                'mary', 'patricia', 'jennifer', 'linda', 'elizabeth', 'sarah',
+                'jessica', 'susan', 'nancy', 'lisa', 'karen', 'betty'
             ],
             'asian': [
-                'chen', 'wei', 'jing', 'li', 'zhang', 'wang', 
-                'yong', 'min', 'hui', 'xiao', 'mei', 'lin',
-                'kim', 'park', 'choi', 'lee', 'jung', 'kang',
-                'tanaka', 'sato', 'suzuki', 'takahashi', 'watanabe',
-                'patel', 'sharma', 'kumar', 'singh', 'gupta'
+                'chen', 'wei', 'jing', 'li', 'zhang', 'wang', 'liu',
+                'yong', 'min', 'hui', 'xiao', 'mei', 'lin', 'yang',
+                'kim', 'park', 'choi', 'lee', 'jung', 'kang', 'cho',
+                'tanaka', 'sato', 'suzuki', 'takahashi', 'watanabe', 'yamamoto',
+                'patel', 'sharma', 'kumar', 'singh', 'gupta', 'shah'
             ],
             'hispanic': [
                 'garcia', 'rodriguez', 'martinez', 'hernandez', 'lopez',
                 'gonzalez', 'perez', 'sanchez', 'ramirez', 'torres',
-                'flores', 'rivera', 'gomez', 'diaz', 'reyes',
-                'cruz', 'morales', 'ortiz', 'gutierrez', 'chavez'
+                'flores', 'rivera', 'gomez', 'diaz', 'reyes', 'cruz',
+                'morales', 'ortiz', 'gutierrez', 'chavez', 'ruiz', 'alvarez',
+                'castillo', 'romero', 'vargas', 'medina', 'aguilar', 'herrera'
             ]
         }
         
-        # Check for each name with word boundaries
+        # Cultural/context patterns for anonymized resumes
+        self.cultural_patterns = {
+            'black': [
+                r'\bhbcu\b', r'\bhistorically black\b', r'\bafrican american\b',
+                r'\bnaacp\b', r'\bblack student union\b', r'\bblack engineers\b',
+                r'\burban league\b', r'\bblack in\b', r'\bafrican diaspora\b',
+                r'\bcivil rights\b', r'\bsocial justice\b', r'\bcommunity organizer\b'
+            ],
+            'white': [
+                r'\bivy league\b', r'\bpreparatory school\b', r'\bboarding school\b',
+                r'\bcountry club\b', r'\blegacy\b', r'\bendowment\b',
+                r'\byacht club\b', r'\bpolo\b', r'\bgolf club\b', r'\btennis club\b',
+                r'\bprivate school\b', r'\bprep school\b', r'\bupper east side\b'
+            ],
+            'asian': [
+                r'\bstem\b', r'\bmit\b', r'\bcaltech\b', r'\bcarnegie mellon\b',
+                r'\bengineering school\b', r'\bmath olympiad\b', r'\bscience olympiad\b',
+                r'\bprogramming competition\b', r'\bhackathon\b', r'\brobotics\b',
+                r'\bconfucius\b', r'\basian american\b', r'\bmodel minority\b'
+            ],
+            'hispanic': [
+                r'\bhispanic\b', r'\blatino\b', r'\blatina\b', r'\bchicano\b',
+                r'\bspanish speaking\b', r'\besl\b', r'\bbilingual\b',
+                r'\bmigrant\b', r'\bimmigrant\b', r'\bborder\b', r'\btexas rio grande\b',
+                r'\bunidos\b', r'\bfiesta\b', r'\bquinceañera\b', r'\bdia de los muertos\b'
+            ]
+        }
+        
+        # Age group patterns
+        self.age_patterns = {
+            'early_career': [
+                r'\brecent graduate\b', r'\bentry level\b', r'\bnew grad\b',
+                r'\bjunior\b', r'\bassociate\b', r'\bintern\b',
+                r'\bclass of (202[0-4]|201[7-9])\b',  # Recent graduates
+                r'\b(0|1|2|3)\s+years?\s+experience\b',
+                r'\bfresher\b', r'\btrainee\b'
+            ],
+            'mid_career': [
+                r'\bmid-level\b', r'\bprofessional\b', r'\bexperienced\b',
+                r'\b(4|5|6|7|8|9|10)\s+years?\s+experience\b',
+                r'\bsenior\s+associate\b', r'\bmanager\b',
+                r'\bclass of (201[0-6]|200[0-9])\b'  # Graduated 2010-2016
+            ],
+            'senior': [
+                r'\bsenior\b', r'\bprincipal\b', r'\bdirector\b',
+                r'\bvice president\b', r'\bvp\b', r'\bexecutive\b',
+                r'\b(1[1-9]|[2-9]\d+)\s+years?\s+experience\b',  # 11+ years
+                r'\bclass of (19\d{2}|200[0-9])\b',  # Graduated before 2010
+                r'\bveteran\b', r'\bexpert\b', r'\blead\b', r'\bhead of\b'
+            ]
+        }
+        
+    def infer_gender(self, text):
+        """Infer gender from text with improved pattern matching"""
+        text_lower = text.lower()
+        
+        male_score = 0
+        female_score = 0
+        
+        # Check direct patterns first
+        for pattern in self.gender_patterns['male']:
+            matches = re.findall(pattern, text_lower)
+            male_score += len(matches)
+        
+        for pattern in self.gender_patterns['female']:
+            matches = re.findall(pattern, text_lower)
+            female_score += len(matches)
+        
+        # Additional heuristic: "his" vs "her" frequency
+        his_count = len(re.findall(r'\bhis\b', text_lower))
+        her_count = len(re.findall(r'\bher\b', text_lower))
+        male_score += his_count * 2
+        female_score += her_count * 2
+        
+        # Determine gender
+        if male_score > female_score:
+            return 'male'
+        elif female_score > male_score:
+            return 'female'
+        else:
+            # Check for common gender-neutral patterns
+            if re.search(r'\bthey\b|\bthem\b|\btheir\b', text_lower):
+                return 'non-binary'
+            return 'unknown'
+    
+    def infer_race_from_names(self, text):
+        """Infer race from names with improved matching"""
+        text_lower = text.lower()
+        
+        race_scores = {'black': 0, 'white': 0, 'asian': 0, 'hispanic': 0}
+        
+        # Check names
         for race, names in self.race_name_patterns.items():
             for name in names:
                 # Use word boundaries to avoid partial matches
                 pattern = r'\b' + re.escape(name) + r'\b'
                 if re.search(pattern, text_lower):
-                    return race
+                    race_scores[race] += 2
+        
+        # Check cultural patterns
+        for race, patterns in self.cultural_patterns.items():
+            for pattern in patterns:
+                if re.search(pattern, text_lower):
+                    race_scores[race] += 1
+        
+        # Return race with highest score
+        if sum(race_scores.values()) > 0:
+            return max(race_scores, key=race_scores.get)
         
         return 'unknown'
     
     def infer_race_from_text(self, text):
-        """Infer race from cultural/educational patterns in anonymized text"""
+        """Infer race from text patterns (for anonymized resumes)"""
         text_lower = text.lower()
         
-        # Cultural/educational patterns
-        cultural_patterns = {
-            'black': ['hbu', 'hbcu', 'historically black', 'african american',
-                     'urban league', 'naacp', 'black student union'],
-            'asian': ['stem', 'technology institute', 'engineering school',
-                     'massachusetts institute', 'caltech', 'carnegie mellon',
-                     'asian american', 'confucius'],
-            'hispanic': ['hispanic', 'latino', 'chicano', 'spanish', 'esl',
-                        'migrant', 'border', 'texas rio grande'],
-            'white': ['ivy league', 'preparatory school', 'boarding school',
-                     'legacy', 'endowment', 'country club']
-        }
+        race_scores = {'black': 0, 'white': 0, 'asian': 0, 'hispanic': 0}
         
-        scores = {'black': 0, 'white': 0, 'asian': 0, 'hispanic': 0}
-        
-        for race, patterns in cultural_patterns.items():
+        # Check cultural patterns
+        for race, patterns in self.cultural_patterns.items():
             for pattern in patterns:
-                if pattern in text_lower:
-                    scores[race] += 1
+                if re.search(pattern, text_lower):
+                    race_scores[race] += 2
         
-        # Default to majority if no signals
-        if max(scores.values()) == 0:
-            return 'white'  # Default majority in US context
+        # Education patterns
+        if re.search(r'\bhbcu|howard|spelman|morehouse|hampton\b', text_lower):
+            race_scores['black'] += 3
         
-        return max(scores, key=scores.get)
+        if re.search(r'\bivy league|harvard|yale|princeton|stanford\b', text_lower):
+            race_scores['white'] += 2
+        
+        if re.search(r'\bmit|caltech|carnegie mellon|engineering school\b', text_lower):
+            race_scores['asian'] += 2
+        
+        if re.search(r'\bspanish|bilingual|esl|migrant|immigrant\b', text_lower):
+            race_scores['hispanic'] += 2
+        
+        # Return highest scoring race
+        if sum(race_scores.values()) > 0:
+            return max(race_scores, key=race_scores.get)
+        
+        return 'unknown'
     
     def infer_age_group(self, text):
-        """Infer approximate age group from text patterns"""
+        """Infer age group from text patterns"""
         text_lower = text.lower()
         
-        experience_match = re.search(r'(\d+)\s+years', text_lower)
-        if experience_match:
-            years_exp = int(experience_match.group(1))
-            if years_exp <= 3:
-                return 'early_career'
-            elif years_exp <= 10:
-                return 'mid_career'
-            else:
-                return 'senior'
+        age_scores = {'early_career': 0, 'mid_career': 0, 'senior': 0}
         
-        graduation_match = re.search(r'(?:class of|graduated)\s+(\d{4})', text_lower)
-        if graduation_match:
-            grad_year = int(graduation_match.group(1))
-            estimated_age = 2024 - grad_year + 22
-            if estimated_age < 30:
-                return 'young'
-            elif estimated_age < 50:
-                return 'middle_aged'
-            else:
-                return 'senior'
+        # Check age patterns
+        for age_group, patterns in self.age_patterns.items():
+            for pattern in patterns:
+                matches = re.findall(pattern, text_lower)
+                age_scores[age_group] += len(matches)
         
-        if any(phrase in text_lower for phrase in ['recent graduate', 'entry level', 'new grad']):
-            return 'early_career'
-        elif any(phrase in text_lower for phrase in ['senior', 'veteran', 'experienced']):
-            return 'senior'
+        # Check for years of experience
+        years_exp_match = re.search(r'(\d+)\s+years?\s+experience', text_lower)
+        if years_exp_match:
+            years = int(years_exp_match.group(1))
+            if years <= 3:
+                age_scores['early_career'] += 2
+            elif years <= 10:
+                age_scores['mid_career'] += 2
+            else:
+                age_scores['senior'] += 2
+        
+        # Check graduation year
+        grad_match = re.search(r'class of\s+(\d{4})', text_lower, re.IGNORECASE)
+        if grad_match:
+            grad_year = int(grad_match.group(1))
+            current_year = 2024  # Update this as needed
+            years_since_grad = current_year - grad_year
+            if years_since_grad <= 3:
+                age_scores['early_career'] += 2
+            elif years_since_grad <= 15:
+                age_scores['mid_career'] += 2
+            else:
+                age_scores['senior'] += 2
+        
+        # Return age group with highest score
+        if sum(age_scores.values()) > 0:
+            return max(age_scores, key=age_scores.get)
         
         return 'unknown'
     
     def infer_demographics(self, text):
-        """Comprehensive demographic inference from text"""
-        text_lower = text.lower()
-        
-        # Gender inference with multiple signals
+        """Comprehensive demographic inference"""
         gender = self.infer_gender(text)
         
-        # Race inference with multiple strategies
+        # Try name-based inference first
         race = self.infer_race_from_names(text)
         if race == 'unknown':
             race = self.infer_race_from_text(text)
         
-        # Age group inference
+        # Age inference
         age_group = self.infer_age_group(text)
         
-        # Add confidence scores
         return {
             'gender': gender,
             'race': race,
-            'age_group': age_group,
-            'gender_confidence': self._gender_confidence(text_lower, gender),
-            'race_confidence': self._race_confidence(text_lower, race),
-            'age_confidence': self._age_confidence(text_lower, age_group)
+            'age_group': age_group
         }
 
     def _gender_confidence(self, text_lower, inferred_gender):
@@ -506,71 +545,119 @@ class FairnessMetrics:
 
 
 class NameSubstitutionExperiment:
-    """Name substitution experiments for bias measurement"""
+    """Name substitution experiments for bias measurement - FIXED"""
     
     def __init__(self, tokenizer, model, device):
         self.tokenizer = tokenizer
         self.model = model
         self.device = device
         
+        # More diverse name sets
         self.male_names = ['James', 'Robert', 'John', 'Michael', 'David', 'William', 
-                          'Richard', 'Joseph', 'Thomas', 'Christopher', 'Daniel', 'Matthew']
+                          'Richard', 'Joseph', 'Thomas', 'Christopher', 'Daniel', 'Matthew',
+                          'Anthony', 'Donald', 'Steven', 'Paul', 'Andrew', 'Joshua',
+                          'Kenneth', 'Kevin', 'Brian', 'George', 'Edward', 'Ronald']
+        
         self.female_names = ['Mary', 'Patricia', 'Jennifer', 'Linda', 'Elizabeth', 
-                            'Barbara', 'Susan', 'Jessica', 'Sarah', 'Karen', 'Nancy', 'Lisa']
+                            'Barbara', 'Susan', 'Jessica', 'Sarah', 'Karen', 'Nancy', 'Lisa',
+                            'Margaret', 'Sandra', 'Ashley', 'Kimberly', 'Emily', 'Donna',
+                            'Michelle', 'Dorothy', 'Carol', 'Amanda', 'Melissa', 'Deborah']
         
+        # Race-specific names with clear cultural associations
         self.white_names = ['Emily', 'Anne', 'Jill', 'Allison', 'Laurie', 'Neil', 
-                           'Geoffrey', 'Brett', 'Greg', 'Matthew', 'Katie', 'Megan']
+                           'Geoffrey', 'Brett', 'Greg', 'Matthew', 'Katie', 'Megan',
+                           'Heather', 'Tiffany', 'Amber', 'Stephanie', 'Brittany', 'Courtney']
+        
         self.black_names = ['Lakisha', 'Latoya', 'Tamika', 'Imani', 'Ebony', 'Darnell',
-                           'Jermaine', 'Tyrone', 'DeShawn', 'Marquis', 'Shanice', 'Aaliyah']
+                           'Jermaine', 'Tyrone', 'DeShawn', 'Marquis', 'Shanice', 'Aaliyah',
+                           'Keisha', 'Jamal', 'Latonya', 'Tyrone', 'DeAndre', 'Shaniqua']
+        
         self.asian_names = ['Wei', 'Jing', 'Li', 'Zhang', 'Wang', 'Chen', 
-                           'Yong', 'Min', 'Hui', 'Xiao', 'Mei', 'Lin']
+                           'Yong', 'Min', 'Hui', 'Xiao', 'Mei', 'Lin',
+                           'Kim', 'Park', 'Choi', 'Lee', 'Jung', 'Kang']
+        
         self.hispanic_names = ['Jose', 'Carlos', 'Luis', 'Juan', 'Miguel', 'Rosa',
-                              'Maria', 'Carmen', 'Ana', 'Dolores', 'Sofia', 'Isabella']
+                              'Maria', 'Carmen', 'Ana', 'Dolores', 'Sofia', 'Isabella',
+                              'Jesus', 'Francisco', 'Jorge', 'Pedro', 'Manuel', 'Ricardo']
     
-    def run_bias_experiment(self, test_texts, test_labels, num_samples=50):
-        """Run bias experiments with name substitution"""
-        
-        results = {
-            'gender_bias': self._run_gender_bias_experiment(test_texts, test_labels, num_samples),
-            'racial_bias': self._run_racial_bias_experiment(test_texts, test_labels, num_samples)
-        }
-        
-        return results
+    def _predict_single(self, text):
+        """Predict class and confidence for a single text"""
+        try:
+            inputs = self.tokenizer(
+                text,
+                truncation=True,
+                padding=True,
+                max_length=512,
+                return_tensors='pt'
+            ).to(self.device)
+            
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+                confidence, pred = torch.max(probs, dim=-1)
+                return pred.cpu().item(), confidence.cpu().item()
+        except Exception as e:
+            print(f"Error in prediction: {e}")
+            return 0, 0.0  # Default to class 0 with 0 confidence
     
     def _run_gender_bias_experiment(self, test_texts, test_labels, num_samples):
-        """Measure gender bias through name substitution"""
+        """Measure gender bias through name substitution - FIXED"""
         male_predictions = []
         female_predictions = []
         bias_scores = []
         
-        for i, (text, label) in enumerate(zip(test_texts[:num_samples], test_labels[:num_samples])):
+        samples_to_test = min(num_samples, len(test_texts))
+        
+        for i in range(samples_to_test):
+            text = test_texts[i]
+            label = test_labels[i]
+            
             try:
-                male_text = f"Candidate: {np.random.choice(self.male_names)} {text}"
-                male_pred, _ = self._predict_single(male_text)
+                # Create versions with different gendered names
+                # Insert at the beginning where it's most noticeable
+                male_text = f"Applicant: {np.random.choice(self.male_names)}. {text}"
+                male_pred, male_conf = self._predict_single(male_text)
                 
-                female_text = f"Candidate: {np.random.choice(self.female_names)} {text}"
-                female_pred, _ = self._predict_single(female_text)
+                female_text = f"Applicant: {np.random.choice(self.female_names)}. {text}"
+                female_pred, female_conf = self._predict_single(female_text)
                 
-                male_predictions.append(male_pred)
-                female_predictions.append(female_pred)
+                # Also test with pronouns added
+                male_text_with_pronouns = f"Applicant: {np.random.choice(self.male_names)}. He has experience in {text[:100]}..."
+                male_pred2, male_conf2 = self._predict_single(male_text_with_pronouns)
                 
-                bias_score = 1 if male_pred != female_pred else 0
+                female_text_with_pronouns = f"Applicant: {np.random.choice(self.female_names)}. She has experience in {text[:100]}..."
+                female_pred2, female_conf2 = self._predict_single(female_text_with_pronouns)
+                
+                male_predictions.extend([male_pred, male_pred2])
+                female_predictions.extend([female_pred, female_pred2])
+                
+                # Calculate bias score (1 if predictions differ)
+                bias_score = 1 if male_pred != female_pred or male_pred2 != female_pred2 else 0
                 bias_scores.append(bias_score)
                 
             except Exception as e:
-                print(f"Error in gender bias experiment: {e}")
+                print(f"Error in gender bias experiment sample {i}: {e}")
                 continue
+        
+        if not male_predictions or not female_predictions:
+            return {
+                'male_predictions': [],
+                'female_predictions': [],
+                'bias_scores': [],
+                'average_bias': 0.0,
+                'male_female_disparity': 0.0
+            }
         
         return {
             'male_predictions': male_predictions,
             'female_predictions': female_predictions,
             'bias_scores': bias_scores,
-            'average_bias': np.mean(bias_scores) if bias_scores else 0,
-            'male_female_disparity': np.mean(male_predictions) - np.mean(female_predictions) if male_predictions and female_predictions else 0
+            'average_bias': np.mean(bias_scores) if bias_scores else 0.0,
+            'male_female_disparity': np.mean(male_predictions) - np.mean(female_predictions) if male_predictions and female_predictions else 0.0
         }
     
     def _run_racial_bias_experiment(self, test_texts, test_labels, num_samples):
-        """Measure racial bias through name substitution"""
+        """Measure racial bias through name substitution - FIXED"""
         racial_groups = {
             'white': self.white_names,
             'black': self.black_names, 
@@ -579,55 +666,75 @@ class NameSubstitutionExperiment:
         }
         
         group_predictions = {group: [] for group in racial_groups.keys()}
+        group_confidences = {group: [] for group in racial_groups.keys()}
         
-        for i, (text, label) in enumerate(zip(test_texts[:num_samples], test_labels[:num_samples])):
+        samples_to_test = min(num_samples, len(test_texts))
+        
+        for i in range(samples_to_test):
+            text = test_texts[i]
+            label = test_labels[i]
+            
             try:
                 for group, names in racial_groups.items():
-                    group_text = f"Candidate: {np.random.choice(names)} {text}"
-                    pred, _ = self._predict_single(group_text)
+                    # Create text with race-associated name
+                    group_text = f"Applicant: {np.random.choice(names)}. {text}"
+                    pred, conf = self._predict_single(group_text)
+                    
                     group_predictions[group].append(pred)
+                    group_confidences[group].append(conf)
                 
             except Exception as e:
-                print(f"Error in racial bias experiment: {e}")
+                print(f"Error in racial bias experiment sample {i}: {e}")
                 continue
         
-        return {
-            'group_predictions': {k: (np.mean(v) if v else 0) for k, v in group_predictions.items()},
-            'average_bias': self._calculate_average_bias(group_predictions),
-            'white_black_disparity': np.mean(group_predictions['white']) - np.mean(group_predictions['black']) if group_predictions['white'] and group_predictions['black'] else 0
+        # Calculate statistics
+        results = {
+            'group_predictions': {},
+            'group_confidences': {},
+            'average_bias': 0.0,
+            'white_black_disparity': 0.0,
+            'prediction_distribution': {}
         }
-    
-    def _calculate_average_bias(self, group_predictions):
-        """Calculate average bias across all groups"""
-        group_means = []
+        
         for group, preds in group_predictions.items():
             if preds:
-                group_means.append(np.mean(preds))
+                results['group_predictions'][group] = {
+                    'mean_prediction': float(np.mean(preds)),
+                    'std_prediction': float(np.std(preds)),
+                    'count': len(preds)
+                }
+                
+                if group in group_confidences and group_confidences[group]:
+                    results['group_confidences'][group] = {
+                        'mean_confidence': float(np.mean(group_confidences[group])),
+                        'std_confidence': float(np.std(group_confidences[group]))
+                    }
+        
+        # Calculate bias metrics
+        group_means = []
+        for group, data in results['group_predictions'].items():
+            group_means.append(data['mean_prediction'])
         
         if len(group_means) >= 2:
-            return max(group_means) - min(group_means)
-        return 0
+            results['average_bias'] = float(max(group_means) - min(group_means))
+        
+        # Calculate white-black disparity specifically
+        if 'white' in results['group_predictions'] and 'black' in results['group_predictions']:
+            white_mean = results['group_predictions']['white']['mean_prediction']
+            black_mean = results['group_predictions']['black']['mean_prediction']
+            results['white_black_disparity'] = float(white_mean - black_mean)
+        
+        return results
     
-    def _predict_single(self, text):
-        """Make prediction for single text with confidence"""
-        try:
-            inputs = self.tokenizer(
-                text,
-                truncation=True,
-                padding='max_length',
-                max_length=512,
-                return_tensors='pt'
-            ).to(self.device)
-            
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-                max_prob, predicted_class = torch.max(probs, dim=1)
-                return predicted_class.item(), max_prob.item()
-        except Exception as e:
-            print(f"Prediction error: {e}")
-            return 0, 0.5
-
+    def run_bias_experiment(self, test_texts, test_labels, num_samples=30):
+        """Run both gender and racial bias experiments"""
+        gender_bias = self._run_gender_bias_experiment(test_texts, test_labels, num_samples)
+        racial_bias = self._run_racial_bias_experiment(test_texts, test_labels, num_samples)
+        
+        return {
+            'gender_bias': gender_bias,
+            'racial_bias': racial_bias
+        }
 
 class BiasAnalyzer:
     """Comprehensive bias analysis framework"""
