@@ -1,66 +1,72 @@
-Enhanced Resume Classification System with Comprehensive Bias Mitigation
-CAI 6605: Trustworthy AI Systems – Final Project
-University of South Florida, Fall 2025
-Group 15: Nithin Palyam, Lorenzo LaPlace
+# Enhanced Resume Classification System with Comprehensive Bias Mitigation
 
-https://img.shields.io/badge/python-3.8+-blue.svg
-https://img.shields.io/badge/PyTorch-2.0+-red.svg
-https://img.shields.io/badge/%F0%9F%A4%97%2520Transformers-4.30+-yellow.svg
-https://img.shields.io/badge/Gradio-3.35+-green.svg
-https://img.shields.io/badge/License-MIT-yellow.svg
+**CAI 6605: Trustworthy AI Systems – Final Project**  
+*University of South Florida, Fall 2025*  
+**Group 15**: Nithin Palyam, Lorenzo LaPlace
 
-📋 Overview
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
+[![Transformers](https://img.shields.io/badge/🤗%20Transformers-4.30+-yellow.svg)](https://huggingface.co/transformers/)
+[![Gradio](https://img.shields.io/badge/Gradio-3.35+-green.svg)](https://gradio.app/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## 📋 Overview
+
 This project implements a trustworthy AI system for resume classification that not only achieves high accuracy but also actively detects and mitigates demographic biases. The system features:
 
-Dual-model architecture: Baseline vs. Debiased models for comparison
+- **Dual-model architecture**: Baseline vs. Debiased models for comparison
+- **Comprehensive bias mitigation**: Multiple debiasing techniques (preprocessing, in-processing, post-processing)
+- **Explainability**: Integrated LIME explanations for model predictions
+- **Fairness evaluation**: 10+ fairness metrics including demographic parity, equal opportunity, and intersectional fairness
+- **Interactive interface**: Gradio web app for real-time testing and comparison
 
-Comprehensive bias mitigation: Multiple debiasing techniques (preprocessing, in-processing, post-processing)
+## 🎯 Key Features
 
-Explainability: Integrated LIME explanations for model predictions
+| Feature | Description |
+|---------|-------------|
+| **High Accuracy** | 88.19% baseline accuracy on 24 job categories |
+| **Bias Reduction** | 100% elimination of name-based gender bias |
+| **Multi-Attribute Fairness** | Gender, race, age, educational privilege, disability |
+| **Explainability** | LIME explanations for model decisions |
+| **Interactive Demo** | Gradio interface with real-time bias analysis |
+| **Open Source** | Fully auditable codebase for transparency |
 
-Fairness evaluation: 10+ fairness metrics including demographic parity, equal opportunity, and intersectional fairness
+## 📊 Performance Summary
 
-Interactive interface: Gradio web app for real-time testing and comparison
+| Metric | Baseline | Debiased | Improvement |
+|--------|----------|----------|-------------|
+| Accuracy | 88.19% | 87.73% | -0.46% (minimal trade-off) |
+| Gender Bias | 0.067 | 0.000 | **100% reduction** |
+| Racial Bias | 0.400 | 0.133 | 66.75% reduction |
+| Intersectional Fairness | 0.556 | 0.750 | +34.89% improvement |
 
-🎯 Key Features
-Feature	Description
-High Accuracy	88.19% baseline accuracy on 24 job categories
-Bias Reduction	100% elimination of name-based gender bias
-Multi-Attribute Fairness	Gender, race, age, educational privilege, disability
-Explainability	LIME explanations for model decisions
-Interactive Demo	Gradio interface with real-time bias analysis
-Open Source	Fully auditable codebase for transparency
-📊 Performance Summary
-Metric	Baseline	Debiased	Improvement
-Accuracy	88.19%	87.73%	-0.46% (minimal trade-off)
-Gender Bias	0.067	0.000	100% reduction
-Racial Bias	0.400	0.133	66.75% reduction
-Intersectional Fairness	0.556	0.750	+34.89% improvement
-🚀 Quick Start
-Prerequisites
-Python 3.8 or higher
+## 🚀 Quick Start
 
-8GB+ RAM
+### Prerequisites
 
-GPU recommended (4GB+ VRAM) but not required
+- Python 3.8 or higher
+- 8GB+ RAM
+- GPU recommended (4GB+ VRAM) but not required
+- 5GB free disk space
 
-5GB free disk space
+### Installation
 
-Installation
-Clone the repository:
-
+1. **Clone the repository**:
 bash
 git clone https://github.com/Nithin2311/TAIS-FinalProject.git
 cd TAIS-FinalProject
-Create and activate a virtual environment:
+
+2. Create and activate a virtual environment:
 
 bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-Install dependencies:
+
+3. Install dependencies:
 
 bash
 pip install -r requirements.txt
+
 Download NLTK data (for text processing):
 
 bash
