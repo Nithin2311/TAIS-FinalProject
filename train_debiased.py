@@ -166,31 +166,65 @@ class DemographicSignalExtractor:
 
 
 class CorrelationPenaltyLoss(nn.Module):
-    """Loss function that penalizes correlation between predictions and demographic signals"""
+    """Loss function that penalizes correlation between predictions and demographic signals - FIXED"""
     
-    def __init__(self, lambda_corr=0.1):
+    def __init__(self, lambda_corr=0.1, penalty_type='absolute'):
         super().__init__()
         self.lambda_corr = lambda_corr
+        self.penalty_type = penalty_type  # 'absolute' or 'squared'
     
     def forward(self, logits, demographic_features):
-        """Penalize correlation between predictions and demographic features"""
+        """Penalize correlation between predictions and demographic features - IMPROVED"""
         batch_size = logits.size(0)
         
         # Get predicted probabilities
         probs = F.softmax(logits, dim=-1)  # [batch_size, num_classes]
         
+        if batch_size < 2:
+            return torch.tensor(0.0, device=logits.device)
+        
         # Normalize demographic features
         demo_norm = demographic_features - demographic_features.mean(dim=0, keepdim=True)
-        demo_norm = demo_norm / (demo_norm.std(dim=0, keepdim=True) + 1e-8)
+        demo_std = demo_norm.std(dim=0, keepdim=True) + 1e-8
+        demo_norm = demo_norm / demo_std
         
-        # Compute correlation
-        correlation = torch.matmul(probs.t(), demo_norm) / batch_size  # [num_classes, demo_dim]
+        # Normalize probabilities
+        prob_norm = probs - probs.mean(dim=0, keepdim=True)
+        prob_std = prob_norm.std(dim=0, keepdim=True) + 1e-8
+        prob_norm = prob_norm / prob_std
         
-        # Penalize high absolute correlation
-        correlation_penalty = torch.mean(torch.abs(correlation))
+        # Compute correlation matrix
+        correlation = torch.matmul(prob_norm.t(), demo_norm) / (batch_size - 1)  # [num_classes, demo_dim]
+        
+        # Apply penalty
+        if self.penalty_type == 'absolute':
+            correlation_penalty = torch.mean(torch.abs(correlation))
+        elif self.penalty_type == 'squared':
+            correlation_penalty = torch.mean(correlation ** 2)
+        else:
+            correlation_penalty = torch.mean(torch.abs(correlation))
+        
+        # Additional penalty for high variance in predictions across demographic groups
+        if demographic_features.size(1) >= 2:  # If we have at least 2 demographic features
+            # Group by demographic clusters
+            demo_clusters = (demographic_features > demographic_features.mean(dim=0)).float()
+            unique_clusters = torch.unique(demo_clusters, dim=0)
+            
+            if len(unique_clusters) > 1:
+                cluster_variances = []
+                for cluster in unique_clusters:
+                    cluster_mask = (demo_clusters == cluster).all(dim=1)
+                    if cluster_mask.sum() > 1:
+                        cluster_probs = probs[cluster_mask]
+                        cluster_mean = cluster_probs.mean(dim=0)
+                        cluster_variance = ((cluster_probs - cluster_mean) ** 2).mean()
+                        cluster_variances.append(cluster_variance)
+                
+                if cluster_variances:
+                    variance_penalty = torch.mean(torch.stack(cluster_variances))
+                    correlation_penalty = correlation_penalty + 0.5 * variance_penalty
         
         return self.lambda_corr * correlation_penalty
-
 
 class CounterfactualAugmentation:
     """Counterfactual examples generation for anonymized resumes"""
@@ -292,16 +326,16 @@ class DebiasingDataset(ResumeDataset):
 
 
 class BiasMitigationPipeline:
-    """Bias mitigation with targeted augmentation and reweighting"""
+    """Bias mitigation with targeted augmentation and reweighting - FIXED"""
     
     def __init__(self):
         self.signal_extractor = DemographicSignalExtractor()
         self.counterfactual_aug = CounterfactualAugmentation()
     
     def apply_debiasing(self, X_train, y_train, X_val, y_val):
-        """Apply debiasing techniques"""
+        """Apply debiasing techniques - IMPROVED"""
         
-        print("Extracting demographic signals...")
+        print("Extracting demographic signals for bias mitigation...")
         
         # Extract demographic signals
         demo_features_train = []
@@ -309,60 +343,76 @@ class BiasMitigationPipeline:
             features = self.signal_extractor.generate_demographic_features(text)
             demo_features_train.append(features)
         
-        # Identify underrepresented groups
-        underrepresented_indices = self._identify_underrepresented_groups(
+        demo_features_train = np.array(demo_features_train)
+        
+        # Identify biased samples (high demographic signal correlation)
+        biased_indices = self._identify_biased_samples(
             demo_features_train, y_train
         )
         
-        # Apply targeted augmentation
-        print(f"Applying targeted augmentation to {len(underrepresented_indices)} samples...")
+        # Apply STRONGER targeted augmentation to biased samples
+        print(f"Applying targeted augmentation to {len(biased_indices)} biased samples...")
         X_augmented, y_augmented, demo_augmented = self._apply_targeted_augmentation(
-            X_train, y_train, demo_features_train, underrepresented_indices
+            X_train, y_train, demo_features_train, biased_indices
         )
         
-        # Compute sample weights
+        # Compute fairness-aware sample weights
         sample_weights = self._compute_fairness_weights(
             y_augmented, demo_augmented
         )
         
-        print(f"Augmented dataset: {len(X_train)} -> {len(X_augmented)} samples")
+        # Apply oversampling to underrepresented groups
+        X_balanced, y_balanced, demo_balanced, weights_balanced = self._balance_dataset(
+            X_augmented, y_augmented, demo_augmented, sample_weights
+        )
         
-        return X_augmented, y_augmented, sample_weights, demo_augmented
+        print(f"Dataset after debiasing: {len(X_train)} -> {len(X_balanced)} samples")
+        
+        return X_balanced, y_balanced, weights_balanced, demo_balanced
     
-    def _identify_underrepresented_groups(self, demo_features, labels):
-        """Identify samples from underrepresented demographic groups"""
-        underrepresented = []
+    def _identify_biased_samples(self, demo_features, labels):
+        """Identify samples likely to cause bias - IMPROVED"""
+        biased_indices = []
         
-        # Convert to numpy for easier processing
+        # Convert to numpy for processing
         demo_np = np.array(demo_features)
         
         # Identify samples with extreme demographic signals
-        # High gender bias
-        gender_bias = np.abs(demo_np[:, 0] - demo_np[:, 1])
-        high_gender_bias = np.where(gender_bias > np.percentile(gender_bias, 75))[0]
+        # Look at gender signals (first 2 features)
+        if demo_np.shape[1] >= 2:
+            gender_bias = np.abs(demo_np[:, 0] - demo_np[:, 1])
+            # Top 30% most gender-biased
+            gender_threshold = np.percentile(gender_bias, 70)
+            high_gender_bias = np.where(gender_bias > gender_threshold)[0]
+            biased_indices.extend(high_gender_bias.tolist())
         
-        # High class bias
-        class_bias = np.abs(demo_np[:, 2] - demo_np[:, 3])
-        high_class_bias = np.where(class_bias > np.percentile(class_bias, 75))[0]
+        # Look at class signals (features 2-4)
+        if demo_np.shape[1] >= 5:
+            class_bias = np.abs(demo_np[:, 2] - demo_np[:, 3]) + np.abs(demo_np[:, 4])
+            class_threshold = np.percentile(class_bias, 70)
+            high_class_bias = np.where(class_bias > class_threshold)[0]
+            biased_indices.extend(high_class_bias.tolist())
         
-        underrepresented.extend(high_gender_bias.tolist())
-        underrepresented.extend(high_class_bias.tolist())
-        
-        # Add rare labels
+        # Add samples from underrepresented labels
+        from collections import Counter
         label_counts = Counter(labels)
         avg_count = np.mean(list(label_counts.values()))
         for label, count in label_counts.items():
-            if count < avg_count * 0.5:  # Less than half the average
+            if count < avg_count * 0.7:  # Underrepresented
                 label_indices = [i for i, l in enumerate(labels) if l == label]
-                underrepresented.extend(label_indices[:min(5, len(label_indices))])
+                # Take more samples from underrepresented classes
+                biased_indices.extend(label_indices[:min(10, len(label_indices))])
         
-        return list(set(underrepresented))
+        return list(set(biased_indices))
     
     def _apply_targeted_augmentation(self, texts, labels, demo_features, target_indices):
-        """Apply augmentation to targeted samples"""
+        """Apply augmentation to targeted samples - IMPROVED"""
         X_augmented = list(texts)
         y_augmented = list(labels)
         demo_augmented = list(demo_features)
+        
+        # Increased augmentation for biased samples
+        augmentation_factor = 3  # Create 3 augmentations per biased sample
         
         for idx in target_indices:
             if idx < len(texts):
@@ -370,24 +420,47 @@ class BiasMitigationPipeline:
                 label = labels[idx]
                 demo_feat = demo_features[idx]
                 
-                # Generate 1-3 augmentations per target sample
-                for _ in range(random.randint(1, 3)):
-                    augmented_text = self.counterfactual_aug.generate_counterfactual(
-                        text, random.choice(['gender', 'industry'])
-                    )
+                # Generate multiple augmentations with different demographic signals
+                for aug_idx in range(augmentation_factor):
+                    # Vary the augmentation type
+                    if aug_idx % 3 == 0:
+                        augmented_text = self.counterfactual_aug.generate_counterfactual(
+                            text, 'gender'
+                        )
+                    elif aug_idx % 3 == 1:
+                        augmented_text = self.counterfactual_aug.generate_counterfactual(
+                            text, 'industry'
+                        )
+                    else:
+                        augmented_text = self.counterfactual_aug.generate_counterfactual(
+                            text, 'class'
+                        )
+                    
                     X_augmented.append(augmented_text)
                     y_augmented.append(label)
                     
-                    # Slightly modify demographic features for augmented sample
+                    # Modify demographic features for augmented sample
+                    # Reduce the demographic bias signal
                     modified_demo = demo_feat.copy()
-                    noise = np.random.normal(0, 0.1, size=modified_demo.shape)
-                    modified_demo = modified_demo + noise
+                    
+                    # Reduce gender bias (balance male/female signals)
+                    if len(modified_demo) >= 2:
+                        modified_demo[0] = modified_demo[0] * 0.5  # Reduce male signal
+                        modified_demo[1] = modified_demo[1] * 0.5  # Reduce female signal
+                    
+                    # Add noise
+                    noise = np.random.normal(0, 0.05, size=modified_demo.shape)
+                    modified_demo = np.clip(modified_demo + noise, 0, 1)
+                    
                     demo_augmented.append(modified_demo)
         
         return X_augmented, y_augmented, demo_augmented
     
     def _compute_fairness_weights(self, labels, demo_features):
-        """Compute sample weights to encourage fairness"""
+        """Compute sample weights to encourage fairness - IMPROVED"""
+        from collections import Counter
+        import numpy as np
+        
         # Base weights from class distribution
         label_counts = Counter(labels)
         total_samples = len(labels)
@@ -395,31 +468,78 @@ class BiasMitigationPipeline:
         base_weights = []
         for label in labels:
             weight = total_samples / (len(label_counts) * max(label_counts[label], 1))
-            base_weights.append(min(weight, 3.0))  # Cap at 3x
+            base_weights.append(min(weight, 5.0))  # Cap at 5x
         
         base_weights = np.array(base_weights, dtype=np.float32)
         
-        # Adjust weights based on demographic features
+        # Adjust weights based on demographic features to REDUCE bias
         demo_np = np.array(demo_features)
         
-        # Penalize samples with extreme demographic bias
-        gender_bias = np.abs(demo_np[:, 0] - demo_np[:, 1])
-        class_bias = np.abs(demo_np[:, 2] - demo_np[:, 3])
-        
-        # Normalize biases
-        gender_norm = (gender_bias - np.mean(gender_bias)) / (np.std(gender_bias) + 1e-8)
-        class_norm = (class_bias - np.mean(class_bias)) / (np.std(class_bias) + 1e-8)
-        
-        # Higher weight for balanced samples
-        fairness_multiplier = 1.0 / (1.0 + np.abs(gender_norm) + np.abs(class_norm))
+        if demo_np.shape[1] >= 2:
+            # Penalize samples with extreme demographic bias MORE
+            gender_bias = np.abs(demo_np[:, 0] - demo_np[:, 1])
+            # Normalize and invert: give lower weight to biased samples
+            gender_norm = (gender_bias - np.mean(gender_bias)) / (np.std(gender_bias) + 1e-8)
+            # Biased samples get weight reduction
+            gender_multiplier = np.exp(-np.abs(gender_norm))
+        else:
+            gender_multiplier = np.ones(len(labels))
         
         # Combine weights
-        final_weights = base_weights * fairness_multiplier
+        final_weights = base_weights * gender_multiplier
         
-        # Normalize
+        # Normalize to maintain overall weight scale
         final_weights = final_weights / np.mean(final_weights)
         
         return final_weights
+    
+    def _balance_dataset(self, texts, labels, demo_features, sample_weights):
+        """Balance dataset by oversampling underrepresented groups"""
+        from collections import Counter
+        import numpy as np
+        
+        label_counts = Counter(labels)
+        max_count = max(label_counts.values())
+        
+        X_balanced = []
+        y_balanced = []
+        demo_balanced = []
+        weights_balanced = []
+        
+        for label in set(labels):
+            # Get indices for this label
+            indices = [i for i, l in enumerate(labels) if l == label]
+            current_count = len(indices)
+            
+            # Calculate how many samples to add
+            if current_count < max_count:
+                needed = max_count - current_count
+                # Oversample
+                oversample_indices = np.random.choice(indices, size=needed, replace=True)
+                
+                # Add original samples
+                for idx in indices:
+                    X_balanced.append(texts[idx])
+                    y_balanced.append(labels[idx])
+                    demo_balanced.append(demo_features[idx])
+                    weights_balanced.append(sample_weights[idx])
+                
+                # Add oversampled samples with reduced weight
+                for idx in oversample_indices:
+                    X_balanced.append(texts[idx])
+                    y_balanced.append(labels[idx])
+                    demo_balanced.append(demo_features[idx])
+                    # Reduced weight for oversampled examples
+                    weights_balanced.append(sample_weights[idx] * 0.5)
+            else:
+                # Just add all samples
+                for idx in indices:
+                    X_balanced.append(texts[idx])
+                    y_balanced.append(labels[idx])
+                    demo_balanced.append(demo_features[idx])
+                    weights_balanced.append(sample_weights[idx])
+        
+        return X_balanced, y_balanced, demo_balanced, weights_balanced
 
 
 class FairnessAwareTrainer(CustomTrainer):
