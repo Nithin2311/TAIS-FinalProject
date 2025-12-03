@@ -42,31 +42,61 @@ class ResumePreprocessor:
         text_lower = text.lower()
         
         technical_skills = {
-            'programming': ['python', 'java', 'javascript', 'c++', 'c#', 'ruby', 'go', 'swift', 'kotlin'],
-            'web': ['html', 'css', 'react', 'angular', 'vue', 'node.js', 'django', 'flask', 'spring'],
-            'data_science': ['machine learning', 'deep learning', 'tensorflow', 'pytorch', 'keras', 'scikit-learn'],
-            'cloud': ['aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform', 'ansible'],
-            'database': ['sql', 'mysql', 'postgresql', 'mongodb', 'redis', 'oracle', 'cassandra'],
-            'devops': ['ci/cd', 'jenkins', 'gitlab', 'github actions', 'monitoring', 'logging'],
-            'mobile': ['android', 'ios', 'react native', 'flutter', 'xcode'],
-            'business': ['project management', 'agile', 'scrum', 'stakeholder', 'strategy']
+            'programming': [
+                r'\bpython\b', r'\bjava\b', r'\bjavascript\b', r'\bc\+\+\b', r'\bc#\b', 
+                r'\bruby\b', r'\bgo\b', r'\bswift\b', r'\bkotlin\b', r'\btypescript\b',
+                r'\bphp\b', r'\bperl\b', r'\br\b', r'\bscala\b', r'\bhaskell\b'
+            ],
+            'web': [
+                r'\bhtml\b', r'\bcss\b', r'\breact\b', r'\bangular\b', r'\bvue\b', 
+                r'\bnode\.js\b', r'\bnodejs\b', r'\bdjango\b', r'\bflask\b', r'\bspring\b',
+                r'\bexpress\b', r'\bfastapi\b'
+            ],
+            'data_science': [
+                r'\bmachine learning\b', r'\bdeep learning\b', r'\btensorflow\b', 
+                r'\bpytorch\b', r'\bkeras\b', r'\bscikit-learn\b', r'\bxgboost\b',
+                r'\bpandas\b', r'\bnumpy\b', r'\bscipy\b', r'\bjupyter\b'
+            ],
+            'cloud': [
+                r'\baws\b', r'\bazure\b', r'\bgcp\b', r'\bgoogle cloud\b', r'\bdocker\b',
+                r'\bkubernetes\b', r'\bterraform\b', r'\bansible\b'
+            ],
+            'database': [
+                r'\bsql\b', r'\bmysql\b', r'\bpostgresql\b', r'\bmongodb\b', r'\bredis\b',
+                r'\boracle\b', r'\bcassandra\b', r'\bsqlite\b'
+            ],
+            'devops': [
+                r'\bci/cd\b', r'\bjenkins\b', r'\bgitlab\b', r'\bgithub actions\b',
+                r'\bmonitoring\b', r'\blogging\b'
+            ],
+            'mobile': [
+                r'\bandroid\b', r'\bios\b', r'\breact native\b', r'\bflutter\b', r'\bxcode\b'
+            ],
+            'business': [
+                r'\bproject management\b', r'\bagile\b', r'\bscrum\b', r'\bstakeholder\b',
+                r'\bstrategy\b'
+            ]
         }
         
         features = []
         
-        for category, skills in technical_skills.items():
-            found_skills = [skill for skill in skills if skill in text_lower]
-            if found_skills:
-                features.extend(found_skills)
+        for category, patterns in technical_skills.items():
+            for pattern in patterns:
+                if re.search(pattern, text_lower):
+                    # Extract just the skill name without word boundaries
+                    skill = re.sub(r'^\\b|\\b$', '', pattern)
+                    skill = re.sub(r'\\\\', '', skill)  # Remove escape characters
+                    features.append(skill)
         
+        # Experience detection - more robust
         experience_patterns = [
-            r'(\d+)\+?\s+years',
-            r'(\d+)\s*-\s*(\d+)\s+years',
+            r'(\d+)\+?\s+years?\s+experience',
+            r'(\d+)\s*-\s*(\d+)\s+years?\s+experience',
+            r'experienced\s+\w+',
             r'senior\s+\w+',
             r'junior\s+\w+',
             r'entry[\s-]level',
-            r'mid[\s-]level',
-            r'experienced\s+\w+'
+            r'mid[\s-]level'
         ]
         
         for pattern in experience_patterns:
