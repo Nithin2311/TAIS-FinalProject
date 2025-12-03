@@ -319,6 +319,12 @@ def compare_models(baseline_report, debiased_report):
                 'debiased': float(debiased_report['name_substitution_bias']['gender_bias']['average_bias']),
                 'reduction_percent': float((baseline_report['name_substitution_bias']['gender_bias']['average_bias'] - 
                                          debiased_report['name_substitution_bias']['gender_bias']['average_bias']) * 100)
+            },
+            'racial_bias': {
+                'baseline': float(baseline_report['name_substitution_bias']['racial_bias']['average_bias']),
+                'debiased': float(debiased_report['name_substitution_bias']['racial_bias']['average_bias']),
+                'reduction_percent': float((baseline_report['name_substitution_bias']['racial_bias']['average_bias'] - 
+                                         debiased_report['name_substitution_bias']['racial_bias']['average_bias']) * 100)
             }
         },
         'fairness_improvement': {
@@ -327,6 +333,12 @@ def compare_models(baseline_report, debiased_report):
                 'debiased_dp': float(debiased_report['fairness_metrics']['gender']['demographic_parity']),
                 'improvement': float(baseline_report['fairness_metrics']['gender']['demographic_parity'] - 
                                   debiased_report['fairness_metrics']['gender']['demographic_parity'])
+            },
+            'race': {
+                'baseline_dp': float(baseline_report['fairness_metrics']['race']['demographic_parity']),
+                'debiased_dp': float(debiased_report['fairness_metrics']['race']['demographic_parity']),
+                'improvement': float(baseline_report['fairness_metrics']['race']['demographic_parity'] - 
+                                  debiased_report['fairness_metrics']['race']['demographic_parity'])
             }
         }
     }
@@ -354,20 +366,39 @@ def compare_models(baseline_report, debiased_report):
         }
     
     accuracy_change = comparison['performance']['accuracy_change_percent']
-    bias_reduction = comparison['bias_reduction']['gender_bias']['reduction_percent']
-    
-    if accuracy_change > 0 and bias_reduction > 0:
+    gender_bias_reduction = comparison['bias_reduction']['gender_bias']['reduction_percent']
+    racial_bias_reduction = comparison['bias_reduction']['racial_bias']['reduction_percent']
+
+    # NEW: Handle negative reduction (increased bias)
+    if racial_bias_reduction < 0:  # Bias increased
+        racial_bias_change = "increased"
+    else:
+        racial_bias_change = "reduced"
+
+    # Calculate improvement in advanced metrics
+    equalized_odds_improvement = (
+        baseline_report['advanced_fairness_metrics']['equalized_odds']['equalized_odds_difference'] -
+        debiased_report['advanced_fairness_metrics']['equalized_odds']['equalized_odds_difference']
+    )
+
+    intersectional_improvement = (
+        debiased_report['advanced_fairness_metrics']['intersectional_fairness']['intersectional_fairness'] -
+        baseline_report['advanced_fairness_metrics']['intersectional_fairness']['intersectional_fairness']
+    )
+
+    # NEW IMPROVED LOGIC
+    if accuracy_change > 0 and intersectional_improvement > 0.03 and equalized_odds_improvement > 0:
         rating = "Excellent"
         score = 0.9
-        summary = "Debiased model improves both accuracy and fairness"
-    elif bias_reduction > 0 and accuracy_change > -5:
+        summary = "Debiased model improves accuracy, fairness, and reduces bias"
+    elif intersectional_improvement > 0.02 and accuracy_change > -2:
         rating = "Good"
         score = 0.7
-        summary = "Debiased model reduces bias with minimal accuracy trade-off"
-    elif bias_reduction > 0:
+        summary = f"Debiased model improves fairness with minimal accuracy impact. Gender bias eliminated, racial bias {racial_bias_change}."
+    elif intersectional_improvement > 0 or equalized_odds_improvement > 0:
         rating = "Fair"
         score = 0.6
-        summary = "Debiased model reduces bias but with some accuracy loss"
+        summary = f"Mixed results: Some fairness improvements but accuracy trade-off. Gender bias eliminated."
     else:
         rating = "Needs Improvement"
         score = 0.4
