@@ -1,7 +1,5 @@
 """
-Optimized Enhanced Model Training and Evaluation Module
-CAI 6605 - Trustworthy AI Systems - Final Project
-Group 15: Nithin Palyam, Lorenzo LaPlace
+Model training and evaluation module.
 """
 
 import torch
@@ -51,10 +49,10 @@ class ResumeDataset(Dataset):
         }
 
 
-class AdvancedFocalLoss(nn.Module):
-    """Advanced Focal Loss with adaptive gamma for addressing class imbalance"""
+class FocalLoss(nn.Module):
+    """Focal Loss for addressing class imbalance"""
     def __init__(self, alpha=None, gamma_range=(2, 5), reduction='mean'):
-        super(AdvancedFocalLoss, self).__init__()
+        super(FocalLoss, self).__init__()
         self.alpha = alpha
         self.gamma_range = gamma_range
         self.reduction = reduction
@@ -64,7 +62,6 @@ class AdvancedFocalLoss(nn.Module):
         ce_loss = F.cross_entropy(inputs, targets, reduction='none')
         pt = torch.exp(-ce_loss)
         
-        # Adaptive gamma based on prediction confidence
         with torch.no_grad():
             probs = F.softmax(inputs, dim=1)
             max_probs, _ = torch.max(probs, dim=1)
@@ -86,15 +83,15 @@ class AdvancedFocalLoss(nn.Module):
             return focal_loss
 
 
-class EnhancedTrainer(Trainer):
-    """Enhanced trainer with class weighting and focal loss"""
+class CustomTrainer(Trainer):
+    """Custom trainer with class weighting and focal loss"""
     
     def __init__(self, class_weights=None, use_focal_loss=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.class_weights = class_weights
         self.use_focal_loss = use_focal_loss
         if use_focal_loss:
-            self.focal_loss = AdvancedFocalLoss(alpha=class_weights, gamma_range=(2, 4))
+            self.focal_loss = FocalLoss(alpha=class_weights, gamma_range=(2, 4))
         else:
             self.focal_loss = None
     
@@ -123,22 +120,19 @@ class EnhancedTrainer(Trainer):
 
 
 def compute_metrics(eval_pred):
-    """Enhanced metrics computation with comprehensive analysis"""
+    """Compute evaluation metrics"""
     predictions, labels = eval_pred
     predictions = np.argmax(predictions, axis=1)
     
-    # Basic metrics
     accuracy = accuracy_score(labels, predictions)
     precision, recall, f1, _ = precision_recall_fscore_support(
         labels, predictions, average='weighted', zero_division=0
     )
     
-    # Per-class metrics
     per_class_precision, per_class_recall, per_class_f1, support = precision_recall_fscore_support(
         labels, predictions, average=None, zero_division=0
     )
     
-    # Macro and micro averages
     macro_f1 = precision_recall_fscore_support(
         labels, predictions, average='macro', zero_division=0
     )[2]
@@ -147,7 +141,6 @@ def compute_metrics(eval_pred):
         labels, predictions, average='micro', zero_division=0
     )[2]
     
-    # Confusion matrix statistics
     cm = confusion_matrix(labels, predictions)
     diagonal = np.diag(cm)
     row_sums = cm.sum(axis=1)
@@ -168,10 +161,9 @@ def compute_metrics(eval_pred):
     }
 
 
-def setup_optimized_model(num_labels, model_name):
-    """Enhanced model initialization with optimized settings"""
+def setup_model(num_labels, model_name):
+    """Initialize model with settings"""
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
     
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     
@@ -187,7 +179,6 @@ def setup_optimized_model(num_labels, model_name):
         classifier_dropout=Config.DROPOUT_RATE
     )
     
-    # Initialize classification head with better initialization
     if hasattr(model, 'classifier'):
         if isinstance(model.classifier, nn.Linear):
             nn.init.xavier_uniform_(model.classifier.weight)
@@ -195,17 +186,12 @@ def setup_optimized_model(num_labels, model_name):
                 nn.init.zeros_(model.classifier.bias)
     
     model.to(device)
-    print(f"Enhanced model initialized with {num_labels} classes")
-    print(f"Using dropout rate: {Config.DROPOUT_RATE}")
     
     return model, tokenizer, device
 
 
-def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
-    """Comprehensive model evaluation with enhanced analysis"""
-    print("\n" + "=" * 60)
-    print("Enhanced Comprehensive Model Evaluation")
-    print("=" * 60)
+def evaluate_model(trainer, test_dataset, label_map, save_report=True):
+    """Comprehensive model evaluation"""
     
     predictions = trainer.predict(test_dataset)
     pred_labels = np.argmax(predictions.predictions, axis=1)
@@ -216,7 +202,6 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
         true_labels, pred_labels, average='weighted', zero_division=0
     )
     
-    # Calculate macro and micro F1
     macro_f1 = precision_recall_fscore_support(
         true_labels, pred_labels, average='macro', zero_division=0
     )[2]
@@ -225,10 +210,7 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
         true_labels, pred_labels, average='micro', zero_division=0
     )[2]
     
-    try:
-        target_names = [label_map[str(i)] for i in range(len(label_map))]
-    except KeyError:
-        target_names = [label_map.get(str(i), f"Category_{i}") for i in range(len(label_map))]
+    target_names = [label_map.get(str(i), f"Category_{i}") for i in range(len(label_map))]
     
     class_report = classification_report(
         true_labels, 
@@ -242,11 +224,6 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
     print(f"Weighted F1 Score: {f1:.4f}")
     print(f"Macro F1 Score: {macro_f1:.4f}")
     print(f"Micro F1 Score: {micro_f1:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    
-    print("\nComprehensive Category Performance Analysis:")
-    print("-" * 50)
     
     category_accuracies = {}
     category_support = {}
@@ -260,41 +237,24 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
                 true_labels[mask], pred_labels[mask], average='weighted', zero_division=0
             )[2]
             
-            try:
-                category_name = label_map[str(i)]
-            except KeyError:
-                category_name = label_map.get(str(i), f"Category_{i}")
-                
+            category_name = label_map.get(str(i), f"Category_{i}")
             category_accuracies[category_name] = float(cat_accuracy)
             category_support[category_name] = int(np.sum(mask))
             category_f1[category_name] = float(cat_f1)
     
-    # Sort by accuracy
     sorted_by_accuracy = sorted(category_accuracies.items(), key=lambda x: x[1], reverse=True)
     
-    print("\nTop 10 Categories by Accuracy:")
-    for category, acc in sorted_by_accuracy[:10]:
+    print("\nTop 5 Categories by Accuracy:")
+    for category, acc in sorted_by_accuracy[:5]:
         support = category_support[category]
         f1_score = category_f1[category]
         print(f"  {category:25s}: Accuracy: {acc:.4f}, F1: {f1_score:.4f}, Samples: {support}")
     
-    print("\nBottom 10 Categories by Accuracy:")
-    for category, acc in sorted_by_accuracy[-10:]:
-        support = category_support[category]
-        f1_score = category_f1[category]
-        print(f"  {category:25s}: Accuracy: {acc:.4f}, F1: {f1_score:.4f}, Samples: {support}")
-    
-    # Identify problematic categories
     problem_categories = [(cat, acc) for cat, acc in sorted_by_accuracy if acc < 0.7]
     if problem_categories:
         print(f"\nWarning: {len(problem_categories)} categories with accuracy < 70%")
         for cat, acc in problem_categories:
             print(f"  {cat:25s}: {acc:.4f}")
-    
-    # Calculate average accuracy for problematic categories
-    if problem_categories:
-        avg_problem_accuracy = np.mean([acc for _, acc in problem_categories])
-        print(f"Average accuracy for problematic categories: {avg_problem_accuracy:.4f}")
     
     if save_report:
         results = {
@@ -314,7 +274,6 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
             'problem_category_accuracies': [float(acc) for cat, acc in problem_categories]
         }
         
-        # Convert numpy types in classification report
         for key, value in results['classification_report'].items():
             if isinstance(value, dict):
                 for subkey, subvalue in value.items():
@@ -322,12 +281,13 @@ def enhanced_evaluate_model(trainer, test_dataset, label_map, save_report=True):
                         results['classification_report'][key][subkey] = subvalue.item()
         
         os.makedirs('results', exist_ok=True)
-        with open('results/enhanced_training_results.json', 'w') as f:
+        with open('results/training_results.json', 'w') as f:
             json.dump(results, f, indent=2)
         
-        print(f"Enhanced evaluation results saved to results/enhanced_training_results.json")
+        print(f"Evaluation results saved to results/training_results.json")
     
     return results
+
 
 def create_optimizer(model, learning_rate, weight_decay):
     """Create optimized optimizer"""
