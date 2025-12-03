@@ -165,12 +165,45 @@ class DemographicInference:
             return 'unknown'
     
     def infer_race_from_names(self, text):
-        """Infer race/ethnicity from names in text"""
+        """Infer race/ethnicity from names in text - improved version"""
         text_lower = text.lower()
         
+        # Enhanced name patterns with more comprehensive lists
+        self.race_name_patterns = {
+            'black': [
+                'darnell', 'lakisha', 'latoya', 'tamika', 'imani', 'ebony', 
+                'jermaine', 'tyrone', 'deshawn', 'marquis', 'shanice', 'aaliyah',
+                'kareem', 'latonya', 'tyrell', 'shaniqua', 'deandre', 'keisha',
+                'jamal', 'tanisha', 'malik', 'tia', 'darius', 'lashonda'
+            ],
+            'white': [
+                'emily', 'anne', 'jill', 'allison', 'laurie', 'neil',
+                'geoffrey', 'brett', 'greg', 'matthew', 'katie', 'megan',
+                'james', 'robert', 'john', 'michael', 'david', 'william',
+                'richard', 'joseph', 'thomas', 'christopher', 'daniel',
+                'mary', 'patricia', 'jennifer', 'linda', 'elizabeth'
+            ],
+            'asian': [
+                'chen', 'wei', 'jing', 'li', 'zhang', 'wang', 
+                'yong', 'min', 'hui', 'xiao', 'mei', 'lin',
+                'kim', 'park', 'choi', 'lee', 'jung', 'kang',
+                'tanaka', 'sato', 'suzuki', 'takahashi', 'watanabe',
+                'patel', 'sharma', 'kumar', 'singh', 'gupta'
+            ],
+            'hispanic': [
+                'garcia', 'rodriguez', 'martinez', 'hernandez', 'lopez',
+                'gonzalez', 'perez', 'sanchez', 'ramirez', 'torres',
+                'flores', 'rivera', 'gomez', 'diaz', 'reyes',
+                'cruz', 'morales', 'ortiz', 'gutierrez', 'chavez'
+            ]
+        }
+        
+        # Check for each name with word boundaries
         for race, names in self.race_name_patterns.items():
             for name in names:
-                if name in text_lower:
+                # Use word boundaries to avoid partial matches
+                pattern = r'\b' + re.escape(name) + r'\b'
+                if re.search(pattern, text_lower):
                     return race
         
         return 'unknown'
@@ -237,14 +270,156 @@ class DemographicInference:
         
         return 'unknown'
     
-    # ADDED: Combined demographic inference method
     def infer_demographics(self, text):
         """Comprehensive demographic inference from text"""
+        text_lower = text.lower()
+        
+        # Gender inference with multiple signals
+        gender = self.infer_gender(text)
+        
+        # Race inference with multiple strategies
+        race = self.infer_race_from_names(text)
+        if race == 'unknown':
+            race = self.infer_race_from_text(text)
+        
+        # Age group inference
+        age_group = self.infer_age_group(text)
+        
+        # Add confidence scores
         return {
-            'gender': self.infer_gender(text),
-            'race': self.infer_race_from_text(text),  # Use text-based inference for anonymized data
-            'age_group': self.infer_age_group(text)
+            'gender': gender,
+            'race': race,
+            'age_group': age_group,
+            'gender_confidence': self._gender_confidence(text_lower, gender),
+            'race_confidence': self._race_confidence(text_lower, race),
+            'age_confidence': self._age_confidence(text_lower, age_group)
         }
+
+    def _gender_confidence(self, text_lower, inferred_gender):
+        """Calculate confidence for gender inference"""
+        score = 0
+        total_signals = 0
+        
+        # Pronoun signals
+        for pronoun in [' he ', ' him ', ' his ']:
+            if pronoun in text_lower:
+                score += 1
+                total_signals += 1
+        
+        for pronoun in [' she ', ' her ', ' hers ']:
+            if pronoun in text_lower:
+                score -= 1
+                total_signals += 1
+        
+        # Name signals (simple check)
+        if 'darnell' in text_lower or 'james' in text_lower or 'michael' in text_lower:
+            score += 2
+            total_signals += 2
+        
+        if 'emily' in text_lower or 'maria' in text_lower or 'jennifer' in text_lower:
+            score -= 2
+            total_signals += 2
+        
+        # Job keyword signals
+        for keyword in self.job_gender_patterns['male_leaning']:
+            if keyword in text_lower:
+                score += 0.5
+                total_signals += 0.5
+        
+        for keyword in self.job_gender_patterns['female_leaning']:
+            if keyword in text_lower:
+                score -= 0.5
+                total_signals += 0.5
+        
+        if total_signals == 0:
+            return 0.5  # Neutral confidence
+        
+        # Normalize confidence
+        confidence = min(abs(score) / max(total_signals, 1), 1.0)
+        
+        # Adjust based on inference match
+        if (inferred_gender == 'male' and score > 0) or (inferred_gender == 'female' and score < 0):
+            return max(confidence, 0.7)
+        else:
+            return min(confidence, 0.6)
+
+    def _race_confidence(self, text_lower, inferred_race):
+        """Calculate confidence for race inference"""
+        score = 0
+        total_signals = 0
+        
+        # Name-based signals
+        for race, names in self.race_name_patterns.items():
+            for name in names:
+                if name in text_lower:
+                    if race == inferred_race:
+                        score += 2
+                    else:
+                        score -= 1
+                    total_signals += 2
+        
+        # Cultural pattern signals
+        cultural_patterns = {
+            'black': ['hbu', 'hbcu', 'historically black', 'african american'],
+            'asian': ['mit', 'stanford', 'engineering', 'computer science'],
+            'hispanic': ['spanish', 'bilingual', 'latino', 'hispanic'],
+            'white': ['ivy league', 'preparatory', 'country club', 'legacy']
+        }
+        
+        for race, patterns in cultural_patterns.items():
+            for pattern in patterns:
+                if pattern in text_lower:
+                    if race == inferred_race:
+                        score += 1
+                    total_signals += 1
+        
+        if total_signals == 0:
+            return 0.5
+        
+        confidence = min(abs(score) / max(total_signals, 1), 1.0)
+        return confidence
+
+    def _age_confidence(self, text_lower, inferred_age):
+        """Calculate confidence for age inference"""
+        score = 0
+        total_signals = 0
+        
+        # Experience years
+        exp_match = re.search(r'(\d+)\s+years', text_lower)
+        if exp_match:
+            years = int(exp_match.group(1))
+            total_signals += 1
+            if (inferred_age == 'early_career' and years <= 3) or \
+              (inferred_age == 'mid_career' and 3 < years <= 10) or \
+              (inferred_age == 'senior' and years > 10):
+                score += 1
+        
+        # Graduation years
+        grad_match = re.search(r'(?:class of|graduated)\s+(\d{4})', text_lower)
+        if grad_match:
+            total_signals += 1
+            # Would need current year to calculate age
+            score += 0.5  # Partial credit for having a year
+        
+        # Age phrases
+        age_phrases = {
+            'early_career': ['recent graduate', 'entry level', 'new grad', 'junior'],
+            'mid_career': ['experienced', 'mid-level', 'professional'],
+            'senior': ['senior', 'veteran', 'expert', 'lead', 'director']
+        }
+        
+        for age_group, phrases in age_phrases.items():
+            for phrase in phrases:
+                if phrase in text_lower:
+                    total_signals += 0.5
+                    if age_group == inferred_age:
+                        score += 0.5
+        
+        if total_signals == 0:
+            return 0.5
+        
+        confidence = min(score / max(total_signals, 1), 1.0)
+        return confidence
 
 
 class FairnessMetrics:
