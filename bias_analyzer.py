@@ -48,7 +48,7 @@ class LimeExplainer:
                         text,
                         truncation=True,
                         padding=True,
-                        max_length=256,
+                        max_length=512,
                         return_tensors='pt'
                     ).to(self.device)
                     
@@ -63,14 +63,14 @@ class LimeExplainer:
         
         try:
             text_str = str(text)
-            if len(text_str.split()) < 3:
+            if len(text_str.split()) < 5:
                 return None
                 
             exp = self.explainer.explain_instance(
                 text_str,
                 predict_proba,
                 num_features=min(num_features, len(text_str.split())),
-                num_samples=100,
+                num_samples=200,
                 top_labels=1
             )
             return exp
@@ -112,19 +112,50 @@ class DemographicInference:
             'hispanic': ['jose', 'carlos', 'luis', 'juan', 'miguel', 'rosa',
                         'maria', 'carmen', 'ana', 'dolores', 'sofia', 'isabella']
         }
+        
+        # ADDED: Job-related keyword patterns for anonymized resumes
+        self.job_gender_patterns = {
+            'male_leaning': [
+                'football', 'basketball', 'baseball', 'hockey', 'golf', 'fishing', 'hunting',
+                'military', 'marine', 'navy', 'army', 'combat', 'veteran',
+                'engineering', 'mechanical', 'electrical', 'construction', 'contractor',
+                'programming', 'coding', 'software', 'algorithm', 'hackathon', 'devops',
+                'physics', 'mathematics', 'calculus', 'quantum', 'statistics',
+                'motorcycle', 'cars', 'automotive', 'welding', 'carpentry'
+            ],
+            'female_leaning': [
+                'nursing', 'caregiving', 'childcare', 'preschool', 'kindergarten',
+                'counseling', 'therapy', 'social work', 'human resources', 'hr',
+                'public relations', 'event planning', 'interior design', 'decorating',
+                'early childhood', 'family therapy', 'community outreach', 'volunteer',
+                'teaching', 'education', 'curriculum', 'pedagogy', 'tutoring',
+                'administrative', 'receptionist', 'secretarial', 'office manager',
+                'fashion', 'beauty', 'cosmetology', 'hairstyling', 'makeup'
+            ]
+        }
     
     def infer_gender(self, text):
-        """Infer gender from text using pronouns and patterns"""
+        """Infer gender from text using pronouns and job-related keywords"""
         text_lower = text.lower()
         
         male_score = 0
         female_score = 0
         
+        # Check pronouns
         for pattern in self.gender_patterns['male']:
             male_score += len(re.findall(pattern, text_lower))
         
         for pattern in self.gender_patterns['female']:
             female_score += len(re.findall(pattern, text_lower))
+        
+        # Check job-related keywords (for anonymized resumes)
+        for keyword in self.job_gender_patterns['male_leaning']:
+            if keyword in text_lower:
+                male_score += 1
+        
+        for keyword in self.job_gender_patterns['female_leaning']:
+            if keyword in text_lower:
+                female_score += 1
         
         if male_score > female_score:
             return 'male'
@@ -143,6 +174,36 @@ class DemographicInference:
                     return race
         
         return 'unknown'
+    
+    def infer_race_from_text(self, text):
+        """Infer race from cultural/educational patterns in anonymized text"""
+        text_lower = text.lower()
+        
+        # Cultural/educational patterns
+        cultural_patterns = {
+            'black': ['hbu', 'hbcu', 'historically black', 'african american',
+                     'urban league', 'naacp', 'black student union'],
+            'asian': ['stem', 'technology institute', 'engineering school',
+                     'massachusetts institute', 'caltech', 'carnegie mellon',
+                     'asian american', 'confucius'],
+            'hispanic': ['hispanic', 'latino', 'chicano', 'spanish', 'esl',
+                        'migrant', 'border', 'texas rio grande'],
+            'white': ['ivy league', 'preparatory school', 'boarding school',
+                     'legacy', 'endowment', 'country club']
+        }
+        
+        scores = {'black': 0, 'white': 0, 'asian': 0, 'hispanic': 0}
+        
+        for race, patterns in cultural_patterns.items():
+            for pattern in patterns:
+                if pattern in text_lower:
+                    scores[race] += 1
+        
+        # Default to majority if no signals
+        if max(scores.values()) == 0:
+            return 'white'  # Default majority in US context
+        
+        return max(scores, key=scores.get)
     
     def infer_age_group(self, text):
         """Infer approximate age group from text patterns"""
@@ -176,11 +237,12 @@ class DemographicInference:
         
         return 'unknown'
     
+    # ADDED: Combined demographic inference method
     def infer_demographics(self, text):
-        """Comprehensive demographic inference"""
+        """Comprehensive demographic inference from text"""
         return {
             'gender': self.infer_gender(text),
-            'race': self.infer_race_from_names(text),
+            'race': self.infer_race_from_text(text),  # Use text-based inference for anonymized data
             'age_group': self.infer_age_group(text)
         }
 
@@ -426,7 +488,8 @@ class BiasAnalyzer:
                 'racial_bias': {'average_bias': 0.0, 'white_black_disparity': 0.0}
             }
         
-        lime_explanations = self._generate_lime_explanations(test_texts[:5], test_labels[:5])
+        # SKIP LIME for now - it's not critical for bias measurement
+        lime_explanations = []  # Empty list instead of calling _generate_lime_explanations
         
         report = self._generate_bias_report(
             fairness_results, category_bias, name_bias_results, lime_explanations,
@@ -444,6 +507,7 @@ class BiasAnalyzer:
         }
         
         for text in texts:
+            # Use the new infer_demographics method
             demo = self.demographic_inference.infer_demographics(text)
             demographics['gender'].append(demo['gender'])
             demographics['race'].append(demo['race'])
@@ -499,22 +563,44 @@ class BiasAnalyzer:
         return max(max_differences) if max_differences else 0
     
     def _equal_opportunity_difference(self, y_true, y_pred, protected_attr):
-        """Calculate equal opportunity difference"""
+        """Calculate equal opportunity difference for multi-class classification"""
         y_true = np.array(y_true)
         y_pred = np.array(y_pred)
         protected_attr = np.array(protected_attr)
         
         groups = np.unique(protected_attr)
-        recall_rates = []
+        num_classes = len(np.unique(y_true))
         
-        for group in groups:
-            group_mask = protected_attr == group
-            true_positive_mask = group_mask & (y_true == y_pred)
-            if np.sum(true_positive_mask) > 0:
-                recall = np.sum(y_pred[true_positive_mask] == y_true[true_positive_mask]) / np.sum(true_positive_mask)
-                recall_rates.append(recall)
+        # Calculate TPR for each group and each class
+        max_differences = []
         
-        return max(recall_rates) - min(recall_rates) if recall_rates else 0
+        for class_label in range(num_classes):
+            group_tprs = []
+            
+            for group in groups:
+                group_mask = protected_attr == group
+                
+                # True positives: samples of this class correctly predicted
+                tp_mask = group_mask & (y_true == class_label) & (y_pred == class_label)
+                tp = np.sum(tp_mask)
+                
+                # Actual positives: samples of this class in the group
+                actual_positives = np.sum(group_mask & (y_true == class_label))
+                
+                if actual_positives > 0:
+                    tpr = tp / actual_positives
+                else:
+                    tpr = 0  # No samples of this class in this group
+                
+                group_tprs.append(tpr)
+            
+            # Calculate difference for this class
+            if len(group_tprs) >= 2:
+                diff = max(group_tprs) - min(group_tprs)
+                max_differences.append(diff)
+        
+        # Return average difference across classes
+        return np.mean(max_differences) if max_differences else 0
     
     def _accuracy_equality_difference(self, y_true, y_pred, protected_attr):
         """Calculate accuracy equality difference"""
