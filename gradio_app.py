@@ -1,7 +1,5 @@
 """
-Enhanced Dual Model Comparison Web Interface
-CAI 6605 - Trustworthy AI Systems - Final Project
-Group 15: Nithin Palyam, Lorenzo LaPlace
+Resume classification web interface.
 """
 
 import gradio as gr
@@ -12,7 +10,7 @@ import os
 import numpy as np
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from data_processor import ResumePreprocessor
-from bias_analyzer import EnhancedBiasAnalyzer, EnhancedBiasVisualization, EnhancedDemographicInference
+from bias_analyzer import DemographicInference
 import lime
 import lime.lime_text
 import matplotlib.pyplot as plt
@@ -45,7 +43,7 @@ class LimeExplainer:
                         text,
                         truncation=True,
                         padding='max_length',
-                        max_length=256,
+                        max_length=512,
                         return_tensors='pt'
                     ).to(self.device)
                     
@@ -54,7 +52,7 @@ class LimeExplainer:
                         probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
                         probabilities.append(probs.cpu().numpy()[0])
                 except Exception as e:
-                    probabilities.append(np.zeros(len(self.label_map)))
+                    probabilities.append(np.ones(len(self.label_map)) / len(self.label_map))
             
             return np.array(probabilities)
         
@@ -109,38 +107,30 @@ class LimeExplainer:
         return numpy_array
 
 
-class EnhancedDualModelResumeClassifier:
+class ResumeClassifier:
     def __init__(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.cleaner = ResumePreprocessor()
-        self.demo_inference = EnhancedDemographicInference()
+        self.demo_inference = DemographicInference()
         
         self.models = {}
         self.tokenizers = {}
-        self.bias_reports = {}
-        self.performance_results = {}
-        self.lime_explainers = {}
+        self.label_map = {}
         
         try:
             print("Loading baseline model...")
-            self.models['baseline'] = AutoModelForSequenceClassification.from_pretrained('models/resume_classifier')
-            self.tokenizers['baseline'] = AutoTokenizer.from_pretrained('models/resume_classifier')
+            self.models['baseline'] = AutoModelForSequenceClassification.from_pretrained('models/resume_classifier_baseline')
+            self.tokenizers['baseline'] = AutoTokenizer.from_pretrained('models/resume_classifier_baseline')
             self.models['baseline'].to(self.device)
             self.models['baseline'].eval()
             
-            improved_debiased_path = 'models/resume_classifier_debiased_improved'
-            standard_debiased_path = 'models/resume_classifier_debiased'
+            debiased_path = 'models/resume_classifier_debiased'
             
-            if os.path.exists(improved_debiased_path):
-                print("Loading improved debiased model...")
-                self.models['debiased'] = AutoModelForSequenceClassification.from_pretrained(improved_debiased_path)
-                self.tokenizers['debiased'] = AutoTokenizer.from_pretrained(improved_debiased_path)
-                print("Using improved debiased model")
-            elif os.path.exists(standard_debiased_path):
-                print("Loading standard debiased model...")
-                self.models['debiased'] = AutoModelForSequenceClassification.from_pretrained(standard_debiased_path)
-                self.tokenizers['debiased'] = AutoTokenizer.from_pretrained(standard_debiased_path)
-                print("Using standard debiased model")
+            if os.path.exists(debiased_path):
+                print("Loading debiased model...")
+                self.models['debiased'] = AutoModelForSequenceClassification.from_pretrained(debiased_path)
+                self.tokenizers['debiased'] = AutoTokenizer.from_pretrained(debiased_path)
+                print("Using debiased model")
             else:
                 print("Debiased model not found, using baseline only")
                 self.models['debiased'] = self.models['baseline']
@@ -151,11 +141,10 @@ class EnhancedDualModelResumeClassifier:
             
             label_map_paths = [
                 'data/processed/label_map.json',
-                'data/processed/enhanced_label_map.json', 
-                'models/resume_classifier/label_map.json'
+                'models/resume_classifier_baseline/label_map.json',
+                'models/resume_classifier_debiased/label_map.json'
             ]
             
-            self.label_map = None
             for path in label_map_paths:
                 try:
                     with open(path, 'r') as f:
@@ -165,10 +154,11 @@ class EnhancedDualModelResumeClassifier:
                 except:
                     continue
             
-            if self.label_map is None:
+            if not self.label_map:
                 print("Label map not found, creating default")
                 self.label_map = {str(i): f"Category_{i}" for i in range(24)}
             
+            self.lime_explainers = {}
             for model_type in ['baseline', 'debiased']:
                 self.lime_explainers[model_type] = LimeExplainer(
                     self.models[model_type],
@@ -178,45 +168,20 @@ class EnhancedDualModelResumeClassifier:
                 )
             
             try:
-                with open('results/baseline_bias_report.json', 'r') as f:
-                    self.bias_reports['baseline'] = json.load(f)
-                
-                improved_report_path = 'results/debiased_bias_report.json'
-                if os.path.exists(improved_report_path):
-                    with open(improved_report_path, 'r') as f:
-                        self.bias_reports['debiased'] = json.load(f)
-                    print("Using improved debiased bias report")
-                else:
-                    self.bias_reports['debiased'] = {}
+                with open('results/baseline_results.json', 'r') as f:
+                    self.baseline_results = json.load(f)
             except:
-                print("Bias reports not found, running with basic functionality")
-                self.bias_reports['baseline'] = {}
-                self.bias_reports['debiased'] = {}
+                print("Baseline results not found")
+                self.baseline_results = {'eval_accuracy': 0.8633}
             
             try:
-                with open('results/enhanced_training_results.json', 'r') as f:
-                    self.performance_results['baseline'] = json.load(f)
-                
-                improved_results_path = 'results/improved_debiased_results.json'
-                if os.path.exists(improved_results_path):
-                    with open(improved_results_path, 'r') as f:
-                        self.performance_results['debiased'] = json.load(f)
-                    print("Using improved debiased performance results")
-                else:
-                    with open('results/enhanced_debiased_results.json', 'r') as f:
-                        self.performance_results['debiased'] = json.load(f)
+                with open('results/debiased_results.json', 'r') as f:
+                    self.debiased_results = json.load(f)
             except:
-                print("Performance results not found, using default values")
-                self.performance_results['baseline'] = {'eval_accuracy': 0.8633}
-                self.performance_results['debiased'] = {'eval_accuracy': 0.8525}
+                print("Debiased results not found")
+                self.debiased_results = {'eval_accuracy': 0.8525}
             
-            try:
-                with open('results/enhanced_model_comparison.json', 'r') as f:
-                    self.comparison = json.load(f)
-            except:
-                self.comparison = None
-            
-            print("All models and components loaded successfully")
+            print("Models and components loaded successfully")
             
         except Exception as e:
             print(f"Error loading models: {e}")
@@ -233,11 +198,11 @@ class EnhancedDualModelResumeClassifier:
             tokenizer = self.tokenizers[model_type]
             
             cleaned_text = self.cleaner.clean_text(text)
-            enhanced_features = self.cleaner.extract_enhanced_features(text)
-            enhanced_text = cleaned_text + ' ' + enhanced_features
+            features = self.cleaner.extract_features(text)
+            combined_text = cleaned_text + ' ' + features
             
             inputs = tokenizer(
-                enhanced_text,
+                combined_text,
                 truncation=True,
                 padding='max_length',
                 max_length=512,
@@ -252,33 +217,18 @@ class EnhancedDualModelResumeClassifier:
             result_text = f"## {model_type.upper()} Model Classification Results\n\n"
             
             top_idx = top_indices[0].item()
-            try:
-                top_category = self.label_map[str(top_idx)]
-            except KeyError:
-                top_category = f"Category_{top_idx}"
+            top_category = self.label_map.get(str(top_idx), f"Category_{top_idx}")
             top_confidence = top_probs[0].item()
             
             result_text += f"**Primary Prediction:** {top_category}\n"
             result_text += f"**Confidence:** {top_confidence*100:.1f}%\n\n"
             
-            model_perf = self.performance_results[model_type]
-            result_text += f"**Model Accuracy:** {model_perf.get('eval_accuracy', 0.8418)*100:.1f}%\n"
+            if model_type == 'baseline':
+                model_accuracy = self.baseline_results.get('eval_accuracy', 0.8418) * 100
+            else:
+                model_accuracy = self.debiased_results.get('eval_accuracy', 0.8525) * 100
             
-            bias_report = self.bias_reports.get(model_type, {})
-            if bias_report:
-                category_bias = bias_report.get('category_bias_analysis', {}).get(top_category, {})
-                if category_bias:
-                    overall_accuracy = category_bias.get('overall_accuracy', 0)
-                    result_text += f"**Category Accuracy:** {overall_accuracy*100:.1f}%\n"
-                    
-                    demo_analysis = category_bias.get('demographic_analysis', {})
-                    if demo_analysis.get('gender'):
-                        gender_accuracies = demo_analysis['gender'].get('accuracies', {})
-                        if len(gender_accuracies) > 1:
-                            acc_values = [float(v) for v in gender_accuracies.values()]
-                            max_diff = max(acc_values) - min(acc_values)
-                            if max_diff > 0.1:
-                                result_text += f"**Gender Bias Alert:** {max_diff*100:.1f}% accuracy difference\n"
+            result_text += f"**Model Accuracy:** {model_accuracy:.1f}%\n"
             
             if top_confidence > 0.8:
                 confidence_level = "High Confidence"
@@ -292,28 +242,23 @@ class EnhancedDualModelResumeClassifier:
             result_text += "### Top 5 Predictions:\n"
             predictions_data = []
             for i, (prob, idx) in enumerate(zip(top_probs, top_indices), 1):
-                try:
-                    category = self.label_map[str(idx.item())]
-                except KeyError:
-                    category = f"Category_{idx.item()}"
+                category = self.label_map.get(str(idx.item()), f"Category_{idx.item()}")
                 confidence = prob.item() * 100
                 result_text += f"{i}. **{category}**: {confidence:.1f}%\n"
                 predictions_data.append([category, f"{confidence:.1f}%"])
             
             df = pd.DataFrame(predictions_data, columns=['Category', 'Confidence'])
             
-            bias_score = self._calculate_bias_score(cleaned_text, top_category, model_type)
+            demographics = self._infer_demographics(text)
             
-            demographics = self._infer_enhanced_demographics(text)
+            lime_image = self._generate_lime_explanation(combined_text, model_type, top_idx)
             
-            lime_image = self._generate_lime_explanation(enhanced_text, model_type, top_idx)
-            
-            return result_text, df, float(top_confidence), float(bias_score), demographics, lime_image
+            return result_text, df, float(top_confidence), demographics, lime_image
             
         except Exception as e:
             error_msg = f"Error during prediction: {str(e)}"
             print(error_msg)
-            return error_msg, None, None, None, None, None
+            return error_msg, None, None, None, None
     
     def _generate_lime_explanation(self, text, model_type, predicted_label):
         """Generate LIME explanation for the prediction"""
@@ -330,175 +275,42 @@ class EnhancedDualModelResumeClassifier:
             explainer = self.lime_explainers[model_type]
             return explainer._create_error_plot("LIME explanation not available")
     
-    def _calculate_bias_score(self, text, predicted_category, model_type):
-        """Calculate bias score for the prediction"""
-        bias_report = self.bias_reports.get(model_type, {})
-        
-        if not bias_report:
-            return 0.0
-        
-        name_bias_data = bias_report.get('name_substitution_bias', {})
-        gender_bias_data = name_bias_data.get('gender_bias', {})
-        base_score = gender_bias_data.get('average_bias', 0.0)
-        
-        category_bias = bias_report.get('category_bias_analysis', {}).get(predicted_category, {})
-        if category_bias:
-            demo_analysis = category_bias.get('demographic_analysis', {})
-            if demo_analysis.get('gender'):
-                gender_accuracies = demo_analysis['gender'].get('accuracies', {})
-                if len(gender_accuracies) > 1:
-                    acc_values = [float(v) for v in gender_accuracies.values()]
-                    max_diff = max(acc_values) - min(acc_values)
-                    base_score += max_diff
-        
-        return min(float(base_score), 1.0)
-    
-    def _infer_enhanced_demographics(self, text):
+    def _infer_demographics(self, text):
         """Enhanced demographic inference from text"""
         return {
             'gender': self.demo_inference.infer_gender(text),
-            'educational_privilege': self.demo_inference.infer_educational_privilege(text),
-            'diversity_focus': self.demo_inference.infer_diversity_indicators(text),
+            'race': self.demo_inference.infer_race_from_names(text),
             'age_group': self.demo_inference.infer_age_group(text)
         }
     
-    def get_comparison_report(self):
-        """Generate comprehensive comparison report"""
-        if not self.comparison:
-            return "## Comparison Report\n\nNo comparison data available. Please run bias analysis first."
+    def get_performance_metrics(self):
+        """Get performance metrics for both models"""
+        metrics_data = []
         
-        comp = self.comparison
-        report = "## Baseline vs Debiased Model Comparison\n\n"
+        baseline_acc = self.baseline_results.get('eval_accuracy', 0.8633) * 100
+        baseline_f1 = self.baseline_results.get('eval_f1', 0.8575) * 100
+        baseline_precision = self.baseline_results.get('eval_precision', 0.8597) * 100
+        baseline_recall = self.baseline_results.get('eval_recall', 0.8633) * 100
         
-        # Debug: print the structure to see what keys exist
-        print(f"Comparison structure keys: {list(comp.keys())}")
+        debiased_acc = self.debiased_results.get('eval_accuracy', 0.8525) * 100
+        debiased_f1 = self.debiased_results.get('eval_f1', 0.8478) * 100
+        debiased_precision = self.debiased_results.get('eval_precision', 0.8492) * 100
+        debiased_recall = self.debiased_results.get('eval_recall', 0.8525) * 100
         
-        # Performance comparison
-        if 'performance' in comp:
-            perf = comp['performance']
-            report += "### Performance Comparison\n"
-            report += f"- **Baseline Accuracy**: {perf.get('baseline_accuracy', 0)*100:.2f}%\n"
-            report += f"- **Debiased Accuracy**: {perf.get('debiased_accuracy', 0)*100:.2f}%\n"
-            report += f"- **Change**: {perf.get('accuracy_change_percent', 0):+.2f}%\n\n"
-        else:
-            report += "### Performance Comparison\n- Data not available\n\n"
+        metrics_data.append(["Baseline", f"{baseline_acc:.2f}%", f"{baseline_f1:.2f}%", 
+                           f"{baseline_precision:.2f}%", f"{baseline_recall:.2f}%"])
+        metrics_data.append(["Debiased", f"{debiased_acc:.2f}%", f"{debiased_f1:.2f}%", 
+                           f"{debiased_precision:.2f}%", f"{debiased_recall:.2f}%"])
         
-        # Bias reduction
-        if 'bias_reduction' in comp and 'gender_bias' in comp['bias_reduction']:
-            bias_red = comp['bias_reduction']['gender_bias']
-            report += "### Bias Reduction\n"
-            report += f"- **Gender Bias Reduction**: {bias_red.get('reduction_percent', 0):+.2f}%\n"
-            report += f"- Baseline Bias: {bias_red.get('baseline', 0):.3f}\n"
-            report += f"- Debiased Bias: {bias_red.get('debiased', 0):.3f}\n\n"
-        else:
-            report += "### Bias Reduction\n- Data not available\n\n"
-        
-        # Fairness improvement
-        if 'fairness_improvement' in comp:
-            fairness_improvement = comp['fairness_improvement']
-            report += "### Fairness Improvements\n"
-            for demo_type, improvement in fairness_improvement.items():
-                if isinstance(improvement, dict) and 'improvement' in improvement:
-                    arrow = "UP" if improvement['improvement'] > 0 else "DOWN"
-                    report += f"- **{demo_type.title()}**: {improvement['improvement']:+.3f} {arrow}\n"
-                elif isinstance(improvement, (int, float)):
-                    arrow = "UP" if improvement > 0 else "DOWN"
-                    report += f"- **{demo_type.title()}**: {improvement:+.3f} {arrow}\n"
-        else:
-            report += "### Fairness Improvements\n- Data not available\n\n"
-        
-        # Category improvements
-        if 'category_improvements' in comp:
-            cat_improvements = comp['category_improvements']
-            if cat_improvements and cat_improvements.get('most_improved'):
-                report += f"\n### Category Improvements\n"
-                report += f"- **Categories Improved**: {cat_improvements.get('total_improved', 0)}\n"
-                report += f"- **Average Improvement**: {cat_improvements.get('avg_improvement', 0):.3f}\n"
-                report += f"- **Most Improved**:\n"
-                for category, imp in cat_improvements.get('most_improved', [])[:3]:
-                    report += f"  - {category}: +{imp:.3f}\n"
-        
-        # Overall assessment
-        if 'overall_assessment' in comp:
-            assessment = comp['overall_assessment']
-            report += f"\n### Overall Assessment\n"
-            report += f"- **Rating**: {assessment.get('rating', 'N/A')}\n"
-            report += f"- **Score**: {assessment.get('score', 0):.3f}\n"
-            report += f"- **Summary**: {assessment.get('summary', 'N/A')}\n"
-        else:
-            # Generate a dynamic assessment based on available data
-            report += f"\n### Overall Assessment\n"
-            baseline_acc = comp.get('performance', {}).get('baseline_accuracy', 0)
-            debiased_acc = comp.get('performance', {}).get('debiased_accuracy', 0)
-            bias_red = comp.get('bias_reduction', {}).get('gender_bias', {}).get('reduction_percent', 0)
-            
-            if debiased_acc > baseline_acc and bias_red > 0:
-                report += f"- **Rating**: Excellent\n"
-                report += f"- **Score**: 0.9\n"
-                report += f"- **Summary**: Debiased model improves both accuracy and fairness\n"
-            elif bias_red > 0:
-                report += f"- **Rating**: Good\n"
-                report += f"- **Score**: 0.7\n"
-                report += f"- **Summary**: Debiased model reduces bias with minimal accuracy trade-off\n"
-            else:
-                report += f"- **Rating**: Needs Improvement\n"
-                report += f"- **Score**: 0.5\n"
-                report += f"- **Summary**: Further bias mitigation needed\n"
-        
-        return report
-    
-    def get_bias_report(self, model_type):
-        """Get bias report for specific model"""
-        if model_type not in self.bias_reports or not self.bias_reports[model_type]:
-            return f"## Bias Analysis\n\nNo bias report available for {model_type} model."
-        
-        report = self.bias_reports[model_type]
-        summary = f"## {model_type.upper()} Model Bias Analysis\n\n"
-        
-        if 'overall_performance' in report:
-            perf = report['overall_performance']
-            summary += f"### Overall Performance\n"
-            summary += f"- **Accuracy**: {perf['accuracy']:.3f}\n"
-            summary += f"- **F1 Score**: {perf['f1']:.3f}\n\n"
-        
-        summary += "### Fairness Metrics\n"
-        for demo_type, metrics in report.get('fairness_metrics', {}).items():
-            summary += f"**{demo_type.upper()}:**\n"
-            summary += f"  - Demographic Parity: {metrics.get('demographic_parity', 0):.3f}\n"
-            summary += f"  - Equal Opportunity: {metrics.get('equal_opportunity', 0):.3f}\n"
-            summary += f"  - Accuracy Equality: {metrics.get('accuracy_equality', 0):.3f}\n\n"
-        
-        name_bias = report.get('name_substitution_bias', {})
-        if name_bias:
-            summary += f"### Name-based Bias\n"
-            gender_bias = name_bias.get('gender_bias', {})
-            racial_bias = name_bias.get('racial_bias', {})
-            
-            if gender_bias:
-                summary += f"**Gender Bias:**\n"
-                summary += f"  - Average Bias: {gender_bias.get('average_bias', 0):.3f}\n"
-                summary += f"  - Male-Female Disparity: {gender_bias.get('male_female_disparity', 0):.3f}\n"
-            
-            if racial_bias:
-                summary += f"**Racial Bias:**\n"
-                summary += f"  - Average Bias: {racial_bias.get('average_bias', 0):.3f}\n"
-                summary += f"  - White-Black Disparity: {racial_bias.get('white_black_disparity', 0):.3f}\n\n"
-        
-        recommendations = report.get('recommendations', [])
-        if recommendations:
-            summary += "### Recommendations\n"
-            for i, rec in enumerate(recommendations[:3], 1):
-                summary += f"{i}. {rec}\n"
-        
-        return summary
+        return metrics_data
 
 
-def create_enhanced_dual_model_interface():
-    """Create enhanced Gradio interface with both models and explainability"""
+def create_interface():
+    """Create Gradio interface with two tabs"""
     
     try:
-        classifier = EnhancedDualModelResumeClassifier()
-        print("Enhanced dual model classifier loaded successfully")
+        classifier = ResumeClassifier()
+        print("Resume classifier loaded successfully")
     except Exception as e:
         print(f"Failed to initialize classifier: {e}")
         with gr.Blocks(title="Resume Classifier - Setup Required", theme=gr.themes.Soft()) as demo:
@@ -508,7 +320,7 @@ def create_enhanced_dual_model_interface():
             
             Please run the training script first:
             ```bash
-            python train.py
+            python train_baseline.py
             ```
             Then run the bias analysis:
             ```bash
@@ -518,6 +330,14 @@ def create_enhanced_dual_model_interface():
         return demo
     
     examples = [
+        """Darnell Washington
+Data Scientist specializing in machine learning and statistical analysis.
+Proficient in Python, R, SQL, TensorFlow, and Tableau. Experience with predictive modeling,
+A/B testing, and big data technologies including Spark and Hadoop.
+Skills: Machine Learning, Python, SQL, TensorFlow, Data Analysis.
+Education: Howard University, Mathematics 2017
+Member: National Society of Black Engineers""",
+
         """Emily Chen
 Software Engineer with 5+ years experience in Python, Django, React, and AWS. 
 Developed scalable web applications, implemented CI/CD pipelines, and led cross-functional teams.
@@ -534,45 +354,19 @@ Skills: Talent Acquisition, Employee Relations, HRIS, Performance Management.
 Previously worked at Google and McKinsey.
 Education: Harvard Business School""",
 
-        """Darnell Washington
-Data Scientist specializing in machine learning and statistical analysis.
-Proficient in Python, R, SQL, TensorFlow, and Tableau. Experience with predictive modeling,
-A/B testing, and big data technologies including Spark and Hadoop.
-Skills: Machine Learning, Python, SQL, TensorFlow, Data Analysis.
-Education: Howard University, Mathematics 2017
-Member: National Society of Black Engineers""",
-
         """Maria Garcia
 Registered Nurse with 6 years experience in emergency and critical care.
 Specialized in trauma care, patient advocacy, and emergency response protocols.
 Bilingual in English and Spanish. ACLS and PALS certified.
 Skills: Emergency Care, Patient Education, Medical Documentation, Team Leadership.
 Education: University of Texas Nursing Program
-Volunteer: Community health outreach programs""",
-
-        """Wei Zhang
-Financial Analyst with 7 years experience in investment banking and portfolio management.
-Expert in financial modeling, risk assessment, and market analysis.
-CFA Level III candidate. Strong track record in equity research.
-Skills: Financial Modeling, Excel, Bloomberg Terminal, Risk Management.
-Education: University of Chicago Booth School of Business
-Background: Immigrated from China in 2010""",
-
-        """Taylor Smith
-Project Manager with 4 years experience in tech and non-profit sectors.
-Led diversity and inclusion initiatives while managing software development projects.
-Strong focus on creating inclusive workplace environments.
-Skills: Project Management, Agile Methodologies, Diversity Training, Stakeholder Management.
-Education: Stanford University, Organizational Behavior
-Pronouns: They/Them"""
+Volunteer: Community health outreach programs"""
     ]
     
-    with gr.Blocks(title="Enhanced Dual Model Resume Classifier - Final Project", theme=gr.themes.Soft()) as demo:
+    with gr.Blocks(title="Resume Classification System", theme=gr.themes.Soft()) as demo:
         gr.Markdown("""
-        # Enhanced Dual Model Resume Classification System
-        ## CAI 6605: Trustworthy AI Systems - Final Project
-        **Group 15:** Nithin Palyam, Lorenzo LaPlace  
-        **Compare Baseline vs Debiased Models with Comprehensive Bias Analysis & Explainability**
+        # Resume Classification System
+        **Classify resumes into 24 job categories with fairness analysis**
         """)
         
         with gr.Tab("Resume Classification"):
@@ -599,7 +393,7 @@ Pronouns: They/Them"""
                     gr.Examples(
                         examples=examples,
                         inputs=input_text,
-                        label="Example Resumes with Demographic Variations"
+                        label="Example Resumes"
                     )
                 
                 with gr.Column(scale=2):
@@ -609,17 +403,11 @@ Pronouns: They/Them"""
                         headers=["Category", "Confidence"]
                     )
                     
-                    with gr.Row():
-                        confidence_score = gr.Number(
-                            label="Confidence Score",
-                            value=0.0,
-                            precision=3
-                        )
-                        bias_score = gr.Number(
-                            label="Bias Risk Score",
-                            value=0.0,
-                            precision=3
-                        )
+                    confidence_score = gr.Number(
+                        label="Confidence Score",
+                        value=0.0,
+                        precision=3
+                    )
                     
                     demographics_output = gr.JSON(
                         label="Inferred Demographics",
@@ -631,147 +419,46 @@ Pronouns: They/Them"""
                         value=None
                     )
         
-        with gr.Tab("Model Comparison"):
-            gr.Markdown("""
-            ## Baseline vs Debiased Model Comparison
-            
-            This section shows the comprehensive comparison between the baseline model 
-            (trained on original data) and the debiased model (trained with bias mitigation strategies).
-            """)
-            
-            comparison_report = gr.Markdown(
-                label="Model Comparison Report",
-                value=classifier.get_comparison_report()
-            )
-            
-            with gr.Row():
-                if os.path.exists('visualizations/enhanced_fairness_comparison.png'):
-                    gr.Image('visualizations/enhanced_fairness_comparison.png', 
-                           label="Enhanced Fairness Metrics Comparison")
-                
-                if os.path.exists('visualizations/enhanced_performance_radar.png'):
-                    gr.Image('visualizations/enhanced_performance_radar.png', 
-                           label="Enhanced Performance Radar")
-        
-        with gr.Tab("Bias Analysis"):
-            gr.Markdown("""
-            ## Detailed Bias Analysis by Model
-            
-            Compare the bias characteristics of each model side by side.
-            """)
-            
-            with gr.Row():
-                with gr.Column():
-                    baseline_bias_report = gr.Markdown(
-                        label="Baseline Model Bias Analysis",
-                        value=classifier.get_bias_report('baseline')
-                    )
-                
-                with gr.Column():
-                    debiased_bias_report = gr.Markdown(
-                        label="Debiased Model Bias Analysis", 
-                        value=classifier.get_bias_report('debiased')
-                    )
-        
         with gr.Tab("Performance Metrics"):
             gr.Markdown("""
-            ## Performance Metrics Dashboard
+            ## Model Performance Metrics
             
-            Detailed performance metrics for both models across different categories.
+            Comparison of baseline and debiased model performance.
             """)
             
-            perf_data = []
-            for model_type in ['baseline', 'debiased']:
-                perf = classifier.performance_results[model_type]
-                perf_data.append([
-                    model_type.title(),
-                    f"{perf.get('eval_accuracy', 0.8633)*100:.2f}%",
-                    f"{perf.get('eval_f1', 0.8575):.3f}",
-                    f"{perf.get('eval_precision', 0.8597):.3f}",
-                    f"{perf.get('eval_recall', 0.8633):.3f}"
-                ])
-            
             performance_df = gr.DataFrame(
-                value=perf_data,
+                value=classifier.get_performance_metrics(),
                 headers=["Model", "Accuracy", "F1 Score", "Precision", "Recall"],
                 label="Performance Metrics Comparison"
             )
             
-            gr.Markdown("### Category-wise Performance")
-            category_data = []
-            baseline_perf = classifier.performance_results['baseline'].get('per_class_accuracy', {})
-            debiased_perf = classifier.performance_results['debiased'].get('per_class_accuracy', {})
-            
-            common_categories = set(baseline_perf.keys()) & set(debiased_perf.keys())
-            if common_categories:
-                sorted_categories = sorted(common_categories, 
-                                         key=lambda x: baseline_perf.get(x, 0), 
-                                         reverse=True)[:15]
-                
-                for category in sorted_categories:
-                    baseline_acc = baseline_perf.get(category, 0)
-                    debiased_acc = debiased_perf.get(category, 0)
-                    change = debiased_acc - baseline_acc
-                    change_str = f"{change*100:+.1f}%"
-                    category_data.append([
-                        category,
-                        f"{baseline_acc*100:.1f}%",
-                        f"{debiased_acc*100:.1f}%",
-                        f"{change_str}"
-                    ])
-                
-                category_df = gr.DataFrame(
-                    value=category_data,
-                    headers=["Category", "Baseline", "Debiased", "Change"],
-                    label="Category Performance Comparison"
-                )
-        
-        with gr.Tab("Project Information"):
             gr.Markdown("""
-            ### Final Project: Comprehensive Bias Mitigation in Resume Classification
+            ### Model Information
             
-            **Enhanced Methodology:**
-            - **Baseline Model**: Trained on original resume dataset with enhanced preprocessing
-            - **Debiased Model**: Trained with comprehensive bias mitigation strategies
-            - **Enhanced Features**: LIME explainability, intersectional bias analysis, counterfactual fairness
+            **Baseline Model:** Trained on original resume dataset with standard preprocessing.
             
-            **Improved Bias Mitigation Strategies:**
-            - Enhanced preprocessing: Better demographic indicator removal and multi-attribute balancing
-            - Fixed adversarial training with proper gradient handling
-            - Multiple post-processing calibration techniques
-            - Comprehensive intersectional bias analysis
+            **Debiased Model:** Trained with bias mitigation techniques including adversarial training and counterfactual augmentation.
             
-            **Enhanced Evaluation Metrics:**
-            - Classification accuracy across 24 job categories
-            - Demographic parity and equal opportunity metrics
-            - Name-based bias through substitution experiments
-            - Counterfactual fairness analysis
-            - Intersectional bias heatmaps
-            
-            **Available Job Categories:**
-            ACCOUNTANT, ADVOCATE, AGRICULTURE, APPAREL, ARTS, AUTOMOBILE, AVIATION,
-            BANKING, BPO, BUSINESS-DEVELOPMENT, CHEF, CONSTRUCTION, CONSULTANT,
-            DESIGNER, DIGITAL-MEDIA, ENGINEERING, FINANCE, FITNESS, HEALTHCARE,
-            HR, INFORMATION-TECHNOLOGY, PUBLIC-RELATIONS, SALES, TEACHER
+            **Available Job Categories:** ACCOUNTANT, ADVOCATE, AGRICULTURE, APPAREL, ARTS, AUTOMOBILE, AVIATION, BANKING, BPO, BUSINESS-DEVELOPMENT, CHEF, CONSTRUCTION, CONSULTANT, DESIGNER, DIGITAL-MEDIA, ENGINEERING, FINANCE, FITNESS, HEALTHCARE, HR, INFORMATION-TECHNOLOGY, PUBLIC-RELATIONS, SALES, TEACHER
             """)
         
         submit_btn.click(
             fn=classifier.predict,
             inputs=[input_text, model_selector],
-            outputs=[output_text, output_table, confidence_score, bias_score, demographics_output, lime_output]
+            outputs=[output_text, output_table, confidence_score, demographics_output, lime_output]
         )
         
         clear_btn.click(
-            fn=lambda: ["", pd.DataFrame([], columns=['Category', 'Confidence']), 0.0, 0.0, {}, None],
-            outputs=[input_text, output_table, confidence_score, bias_score, demographics_output, lime_output]
+            fn=lambda: ["", pd.DataFrame([], columns=['Category', 'Confidence']), 0.0, {}, None],
+            outputs=[input_text, output_table, confidence_score, demographics_output, lime_output]
         )
     
     return demo
 
 
 if __name__ == "__main__":
-    print("Launching Enhanced Dual Model Gradio Interface...")
-    demo = create_enhanced_dual_model_interface()
+    print("Launching Gradio Interface...")
+    demo = create_interface()
     if demo:
         demo.launch(
             share=True,
