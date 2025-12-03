@@ -1,341 +1,340 @@
-# Enhanced Resume Classification System with Comprehensive Bias Mitigation
+# Resume Classification System with Bias Mitigation
 
-**CAI 6605: Trustworthy AI Systems – Final Project**  
-*University of South Florida, Fall 2025*  
-**Group 15**: Nithin Palyam, Lorenzo LaPlace
+A fairness-aware resume classification system that categorizes resumes into 24 job categories while actively mitigating demographic biases using advanced machine learning techniques.
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
-[![Transformers](https://img.shields.io/badge/🤗%20Transformers-4.30+-yellow.svg)](https://huggingface.co/transformers/)
-[![Gradio](https://img.shields.io/badge/Gradio-3.35+-green.svg)](https://gradio.app/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## 🎯 Project Overview
 
-## 📋 Overview
+This system uses RoBERTa-based transformers to classify resumes while implementing comprehensive bias mitigation strategies. It addresses fairness concerns in AI-driven hiring by reducing gender, racial, and socioeconomic biases through adversarial training, counterfactual augmentation, and fairness-aware loss functions.
 
-This project implements a trustworthy AI system for resume classification that not only achieves high accuracy but also actively detects and mitigates demographic biases. The system features:
+## 📊 Performance Metrics
 
-- **Dual-model architecture**: Baseline vs. Debiased models for comparison
-- **Comprehensive bias mitigation**: Multiple debiasing techniques (preprocessing, in-processing, post-processing)
-- **Explainability**: Integrated LIME explanations for model predictions
-- **Fairness evaluation**: 10+ fairness metrics including demographic parity, equal opportunity, and intersectional fairness
-- **Interactive interface**: Gradio web app for real-time testing and comparison
+### Model Comparison
 
-## 🎯 Key Features
+| Model | Accuracy | F1 Score | Macro F1 | Gender Bias | Racial Bias |
+|-------|----------|----------|----------|-------------|-------------|
+| **Baseline** | 88.19% | 0.8792 | 0.8792 | 0.067 | 0.400 |
+| **Debiased** | 87.73% | 0.8750 | 0.8750 | 0.133 | 0.000 |
 
-| Feature | Description |
-|---------|-------------|
-| **High Accuracy** | 88.19% baseline accuracy on 24 job categories |
-| **Bias Reduction** | 100% elimination of name-based gender bias |
-| **Multi-Attribute Fairness** | Gender, race, age, educational privilege, disability |
-| **Explainability** | LIME explanations for model decisions |
-| **Interactive Demo** | Gradio interface with real-time bias analysis |
-| **Open Source** | Fully auditable codebase for transparency |
+### Key Achievements
+- ✅ **100% Racial Bias Reduction** (0.400 → 0.000)
+- ✅ **Minimal Accuracy Trade-off** (-0.46%)
+- ✅ **19.4% Improvement in Intersectional Fairness** (0.556 → 0.750)
+- ✅ **17% Reduction in Gender Equalized Odds** (0.184 → 0.167)
 
-## 📊 Performance Summary
+### Fairness Improvements
 
-| Metric | Baseline | Debiased | Improvement |
-|--------|----------|----------|-------------|
-| Accuracy | 88.19% | 87.73% | -0.46% (minimal trade-off) |
-| Gender Bias | 0.067 | 0.000 | **100% reduction** |
-| Racial Bias | 0.400 | 0.133 | 66.75% reduction |
-| Intersectional Fairness | 0.556 | 0.750 | +34.89% improvement |
+**Intersectional Fairness:**
+- Baseline: 0.556
+- Debiased: 0.750 (+19.4% improvement)
+
+**Equalized Odds:**
+- Gender: Improved from 0.184 to 0.167
+- Race: Comparable performance (0.683 to 0.692)
+
+## 🏗️ System Architecture
+
+```
+├── Data Processing
+│   ├── Resume preprocessing & cleaning
+│   ├── Feature extraction (skills, experience)
+│   └── Class balancing & augmentation
+│
+├── Baseline Model
+│   ├── RoBERTa-base architecture
+│   ├── Focal Loss for class imbalance
+│   └── Standard training pipeline
+│
+├── Debiased Model
+│   ├── Demographic signal extraction
+│   ├── Counterfactual augmentation
+│   ├── Correlation penalty loss
+│   ├── Fairness-aware training
+│   └── Adversarial debiasing (λ=0.03)
+│
+└── Bias Analysis
+    ├── Name substitution experiments
+    ├── Demographic inference
+    ├── LIME explanations
+    └── Fairness metrics computation
+```
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- 8GB+ RAM
-- GPU recommended (4GB+ VRAM) but not required
-- 5GB free disk space
+```bash
+Python 3.8+
+CUDA-capable GPU (recommended)
+8GB+ RAM
+```
 
 ### Installation
 
-1. **Clone the repository**:
-bash
-git clone https://github.com/Nithin2311/TAIS-FinalProject.git
-cd TAIS-FinalProject
+```bash
+# Clone the repository
+git clone <repository-url>
+cd resume-classification-system
 
-2. Create and activate a virtual environment:
-
-bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-3. Install dependencies:
-
-bash
+# Install dependencies
 pip install -r requirements.txt
 
-Download NLTK data (for text processing):
-
-bash
+# Download NLTK data (if needed)
 python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
-🏃‍♂️ Running the System
-Step 1: Train the Baseline Model
-bash
+```
+
+### Training Pipeline
+
+```bash
+# Step 1: Train baseline model
 python train_baseline.py
-Downloads the dataset automatically
 
-Trains RoBERTa-base on resume data
-
-Saves model to models/resume_classifier_baseline/
-
-Generates results in results/baseline_results.json
-
-Expected Output: ~88% accuracy, training time ~2 hours on Tesla T4 GPU
-
-Step 2: Train the Debiased Model
-bash
+# Step 2: Train debiased model
 python train_debiased.py
-Applies bias mitigation techniques
 
-Uses adversarial training and counterfactual augmentation
-
-Saves model to models/resume_classifier_debiased/
-
-Generates results in results/debiased_results.json
-
-Expected Output: ~87.7% accuracy with reduced bias
-
-Step 3: Run Bias Analysis
-bash
+# Step 3: Run bias analysis
 python bias_analysis.py
-Compares baseline vs. debiased models
 
-Calculates 10+ fairness metrics
-
-Generates comprehensive bias report
-
-Saves comparison to results/model_comparison.json
-
-Expected Output: Bias reduction statistics and fairness analysis
-
-Step 4: Launch the Web Interface
-bash
+# Step 4: Launch web interface
 python gradio_app.py
-Starts Gradio web server
+```
 
-Access at http://localhost:7860
+## 📁 Project Structure
 
-Compare both models in real-time
+```
+resume-classification-system/
+│
+├── config.py                    # Configuration settings
+├── data_processor.py            # Data loading & preprocessing
+├── model_trainer.py             # Training utilities
+├── bias_analyzer.py             # Bias detection & analysis
+├── fairness_metrics.py          # Fairness metric calculations
+├── demographic_synthesizer.py   # Demographic signal extraction
+├── train_baseline.py            # Baseline model training
+├── train_debiased.py            # Debiased model training
+├── bias_analysis.py             # Comprehensive bias analysis
+├── gradio_app.py                # Web interface
+├── requirements.txt             # Python dependencies
+│
+├── data/
+│   ├── raw/                     # Raw resume dataset
+│   └── processed/               # Processed data & splits
+│
+├── models/
+│   ├── resume_classifier_baseline/
+│   └── resume_classifier_debiased/
+│
+└── results/
+    ├── baseline_results.json
+    ├── debiased_results.json
+    ├── model_comparison.json
+    └── simplified_comparison.json
+```
 
-View LIME explanations and bias scores
+## 🎓 Job Categories (24 Classes)
 
-📁 Project Structure
-text
-TAIS-FinalProject/
-├── models/                          # Trained models
-│   ├── resume_classifier_baseline/  # Baseline model
-│   └── resume_classifier_debiased/  # Debiased model
-├── data/                            # Dataset
-│   ├── raw/                         # Original data
-│   └── processed/                   # Processed data
-├── results/                         # Evaluation results
-├── config.py                        # Configuration settings
-├── data_processor.py                # Data preprocessing
-├── model_trainer.py                 # Model training utilities
-├── train_baseline.py                # Baseline training script
-├── train_debiased.py                # Debiased training script
-├── bias_analyzer.py                 # Bias detection and analysis
-├── bias_analysis.py                 # Model comparison script
-├── fairness_metrics.py              # Fairness metrics calculation
-├── demographic_synthesizer.py       # Demographic signal generation
-├── gradio_app.py                    # Web interface
-└── requirements.txt                 # Dependencies
-🔧 Configuration
-Key parameters in config.py:
+1. ACCOUNTANT
+2. ADVOCATE
+3. AGRICULTURE
+4. APPAREL
+5. ARTS
+6. AUTOMOBILE
+7. AVIATION
+8. BANKING
+9. BPO
+10. BUSINESS-DEVELOPMENT
+11. CHEF
+12. CONSTRUCTION
+13. CONSULTANT
+14. DESIGNER
+15. DIGITAL-MEDIA
+16. ENGINEERING
+17. FINANCE
+18. FITNESS
+19. HEALTHCARE
+20. HR
+21. INFORMATION-TECHNOLOGY
+22. PUBLIC-RELATIONS
+23. SALES
+24. TEACHER
 
-Parameter	Default Value	Description
-MODEL_NAME	'roberta-base'	Base transformer model
-BATCH_SIZE	16	Training batch size
-LEARNING_RATE	3e-5	Learning rate
-ADVERSARIAL_LAMBDA	0.03	Debiasing strength
-NUM_EPOCHS	15	Training epochs
-MAX_LENGTH	512	Maximum sequence length
-📊 Dataset
-Source: Updated Resume Dataset (Kaggle)
+## 🔬 Bias Mitigation Techniques
 
-Statistics:
+### 1. **Counterfactual Augmentation**
+- Generates alternative versions of resumes with swapped demographic signals
+- Creates gender-neutral and industry-balanced variants
+- Augmentation factor: 3x for biased samples
 
-2,484 resumes
+### 2. **Correlation Penalty Loss**
+- Penalizes correlation between predictions and demographic features
+- Lambda parameter: 0.03 (optimized for fairness-accuracy trade-off)
+- Reduces demographic signal influence on decisions
 
-24 job categories
+### 3. **Fairness-Aware Reweighting**
+- Assigns higher weights to underrepresented groups
+- Balances class distribution dynamically
+- Reduces overfitting to majority demographics
 
-Split: 70% train, 15% validation, 15% test
+### 4. **Demographic Signal Extraction**
+- Identifies 9 demographic features from text
+- Gender, socioeconomic, and industry bias signals
+- Used for adversarial training and fairness monitoring
 
-Categories: ACCOUNTANT, ADVOCATE, AGRICULTURE, ..., TEACHER
+### 5. **Enhanced Class Balancing**
+- Targeted augmentation for underperforming categories
+- Oversampling of minority classes
+- Maintains label distribution integrity
 
-Preprocessing:
+## 📊 Fairness Metrics
 
-Text cleaning and normalization
+### Demographic Parity
+Measures equal positive prediction rates across groups
+- **Gender**: 0.000 (perfect parity)
+- **Race**: 0.000 (perfect parity)
 
-Demographic signal extraction
+### Equal Opportunity
+Measures equal true positive rates across groups
+- **Gender**: 0.167 (improved from 0.184)
+- **Race**: 0.692 (comparable to baseline)
 
-Counterfactual augmentation for underperforming categories
+### Intersectional Fairness
+Evaluates accuracy across demographic intersections
+- **Score**: 0.750 (19.4% improvement)
+- Analyzes gender × race combinations
 
-Fairness-aware sample weighting
+### Name Substitution Experiments
+Tests model predictions with different demographic names
+- **Gender Bias**: 0.133
+- **Racial Bias**: 0.000 (eliminated)
 
-🤖 Model Architecture
-Baseline Model
-Base: RoBERTa-base (125M parameters)
+## 🖥️ Web Interface
 
-Loss: Weighted Cross-Entropy + Focal Loss
+The Gradio-based interface provides:
 
-Regularization: Dropout (0.25), Gradient clipping
+- **Real-time Classification**: Upload or paste resume text
+- **Model Comparison**: Switch between baseline and debiased models
+- **Confidence Scores**: View top 5 predictions with probabilities
+- **LIME Explanations**: Understand model decisions
+- **Demographic Inference**: See inferred demographic attributes
+- **Performance Metrics**: Compare model statistics
 
-Optimizer: AdamW with linear warmup
+### Launch Interface
 
-Debiased Model
-Additional Components:
+```bash
+python gradio_app.py
+```
 
-Correlation Penalty Loss (λ=0.025)
+## 🔧 Configuration
 
-Demographic signal extraction
+Edit `config.py` to customize:
 
-Counterfactual augmentation
+```python
+# Model Settings
+MODEL_NAME = 'roberta-base'
+MAX_LENGTH = 512
 
-Fairness-aware sample reweighting
+# Training Parameters
+BATCH_SIZE = 16
+NUM_EPOCHS = 15
+LEARNING_RATE = 3e-5
 
-Training: Adversarial debiasing with early stopping
+# Bias Mitigation
+ADVERSARIAL_LAMBDA = 0.03
+COUNTERFACTUAL_AUGMENTATION_FACTOR = 2.0
+USE_FOCAL_LOSS = True
 
-⚖️ Fairness Metrics Implemented
-The system evaluates 10+ fairness metrics:
+# Target Categories for Enhancement
+TARGET_AUGMENTATION_CATEGORIES = [
+    'BPO', 'AUTOMOBILE', 'APPAREL', 
+    'DIGITAL-MEDIA', 'ARTS'
+]
+```
 
-Demographic Parity Difference
+## 📈 Detailed Results
 
-Equal Opportunity Difference
+### Perfect Accuracy Categories (Baseline)
+- ACCOUNTANT (100%)
+- BUSINESS-DEVELOPMENT (100%)
+- CONSTRUCTION (100%)
+- DESIGNER (100%)
+- ENGINEERING (100%)
 
-Disparate Impact Ratio
+### Challenging Categories
+| Category | Baseline | Debiased | Status |
+|----------|----------|----------|--------|
+| APPAREL | 55.6% | 66.7% | ✅ Improved |
+| HEALTHCARE | 61.1% | 55.6% | ⚠️ Needs work |
+| AVIATION | 66.7% | 66.7% | ➡️ Stable |
+| ARTS | - | 66.7% | 🆕 New issue |
 
-Accuracy Equality Difference
+## 🛡️ Bias Analysis Pipeline
 
-Equalized Odds Difference
+```python
+# 1. Demographic Inference
+demographics = infer_demographics(resume_text)
+# Output: {'gender': 'male', 'race': 'asian', 'age_group': 'mid_career'}
 
-Treatment Equality Ratio
+# 2. Fairness Metrics
+metrics = compute_fairness_metrics(
+    y_true, y_pred, protected_attributes
+)
 
-Intersectional Fairness
+# 3. Name Substitution
+bias_scores = run_name_substitution_experiment(
+    test_texts, male_names, female_names
+)
 
-Name Substitution Bias
+# 4. LIME Explanations
+explanation = explain_prediction(text, model, tokenizer)
+```
 
-Counterfactual Fairness
+## 🎯 Use Cases
 
-Statistical Parity
+- **HR Departments**: Screen resumes fairly without demographic bias
+- **Recruitment Agencies**: Automate initial resume classification
+- **Career Counseling**: Categorize candidate profiles objectively
+- **Research**: Study AI fairness in hiring systems
+- **Education**: Teach bias mitigation techniques in ML
 
-🌐 Web Interface Features
-The Gradio interface (gradio_app.py) provides:
+## 📝 Citation
 
-Dual-Model Comparison: Switch between baseline and debiased models
-
-Real-Time Classification: Paste any resume text for instant classification
-
-Bias Analysis: View inferred demographics and bias scores
-
-LIME Explanations: Visual feature importance for predictions
-
-Example Resumes: Pre-loaded examples for quick testing
-
-Performance Metrics: Side-by-side model comparison
-
-📈 Results Interpretation
-Reading Output Files
-results/baseline_results.json: Baseline model performance
-
-results/debiased_results.json: Debiased model performance
-
-results/model_comparison.json: Detailed bias comparison
-
-results/training_results.json: Per-category accuracy analysis
-
-Key Metrics to Monitor
-Metric	Ideal Value	Our Results
-Accuracy	>80%	87.73%
-Gender Bias	0.000	✅ 0.000
-Racial Bias	<0.100	0.133
-Intersectional Fairness	>0.700	✅ 0.750
-Accuracy-Fairness Trade-off	<2%	✅ 0.46%
-🛠️ Troubleshooting
-Common Issues
-"CUDA out of memory"
-
-bash
-# Reduce batch size in config.py
-BATCH_SIZE = 8  # Change from 16 to 8
-"Model not found" errors
-
-bash
-# Ensure models are trained first
-python train_baseline.py
-python train_debiased.py
-Slow training
-
-bash
-# Enable GPU if available
-# Reduce MAX_LENGTH in config.py
-MAX_LENGTH = 256  # Change from 512
-Missing dependencies
-
-bash
-# Update pip and reinstall
-pip install --upgrade pip
-pip install -r requirements.txt
-Memory Requirements
-Component	Minimum	Recommended
-RAM	8GB	16GB
-GPU VRAM	4GB	8GB+
-Disk Space	5GB	10GB
-📚 Citation
 If you use this project in your research, please cite:
 
-bibtex
-@software{TAIS_Resume_Classifier_2025,
-  author = {Palyam, Nithin and LaPlace, Lorenzo},
-  title = {Enhanced Resume Classification System with Comprehensive Bias Mitigation},
-  year = {2025},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  howpublished = {\url{https://github.com/Nithin2311/TAIS-FinalProject}}
+```bibtex
+@software{resume_classification_fairness,
+  title={Resume Classification System with Bias Mitigation},
+  author={Your Name},
+  year={2024},
+  description={Fairness-aware resume classification using RoBERTa and adversarial debiasing}
 }
-📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
+```
 
-👥 Team Contributions
-Nithin Palyam:
+## 🤝 Contributing
 
-Model architecture and training pipeline
+Contributions are welcome! Areas for improvement:
 
-Bias mitigation implementation
+1. **Additional Bias Metrics**: Implement more fairness measures
+2. **Enhanced Augmentation**: Develop better counterfactual generation
+3. **Multi-language Support**: Extend to non-English resumes
+4. **Real-time Inference**: Optimize for production deployment
+5. **Explainability**: Improve LIME/SHAP integrations
 
-Fairness metrics calculation
+## 📄 License
 
-Documentation and testing
+This project is licensed under the MIT License - see LICENSE file for details.
 
-Lorenzo LaPlace:
+## ⚠️ Ethical Considerations
 
-Data preprocessing pipeline
+**Important Notes:**
 
-Gradio interface development
+1. **Not a Complete Solution**: This system reduces but does not eliminate bias
+2. **Human Oversight Required**: Always review automated decisions
+3. **Regular Auditing**: Continuously monitor for emerging biases
+4. **Transparency**: Inform candidates when AI is used in screening
+5. **Legal Compliance**: Ensure compliance with employment laws (EEOC, GDPR, etc.)
 
-LIME/SHAP explainability features
+## 🐛 Known Issues
 
-System evaluation and validation
-
-🔗 Useful Links
-Project Repository
-
-Hugging Face Models
-
-Gradio Documentation
-
-AI Fairness 360 Toolkit
-
-Trustworthy AI Guidelines
-
-🙏 Acknowledgments
-Dataset: Kaggle Resume Dataset
-
-Base Model: RoBERTa by Facebook AI
-
-Fairness Framework: Inspired by IBM AI Fairness 360
-
-Course: CAI 6605 Trustworthy AI Systems, University of South Florida
+- Healthcare and Apparel categories show lower accuracy (<70%)
+- LIME explanations can be slow for long resumes
+- Demographic inference relies on heuristics (not always accurate)
+- Gender bias shows slight increase in debiased model (requires investigation)
