@@ -1,117 +1,335 @@
-# TAIS-MidtermProject
+Enhanced Resume Classification System with Comprehensive Bias Mitigation
+CAI 6605: Trustworthy AI Systems – Final Project
+University of South Florida, Fall 2025
+Group 15: Nithin Palyam, Lorenzo LaPlace
 
-# Resume Classification System - Midterm Project
-## CAI 6605: Trustworthy AI Systems | Fall 2025 | Group 15
+https://img.shields.io/badge/python-3.8+-blue.svg
+https://img.shields.io/badge/PyTorch-2.0+-red.svg
+https://img.shields.io/badge/%F0%9F%A4%97%2520Transformers-4.30+-yellow.svg
+https://img.shields.io/badge/Gradio-3.35+-green.svg
+https://img.shields.io/badge/License-MIT-yellow.svg
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
-![PyTorch](https://img.shields.io/badge/PyTorch-Transformers-orange)
-![Accuracy](https://img.shields.io/badge/Accuracy-84.45%25-brightgreen)
-![License](https://img.shields.io/badge/License-MIT-green)
+📋 Overview
+This project implements a trustworthy AI system for resume classification that not only achieves high accuracy but also actively detects and mitigates demographic biases. The system features:
 
-## 📋 Project Overview
+Dual-model architecture: Baseline vs. Debiased models for comparison
 
-An AI-powered resume classification system that automatically categorizes resumes into **24 job categories** with **84.45% test accuracy**, exceeding the 80% target requirement. Built with RoBERTa-base and featuring an automated data pipeline with professional Gradio interface.
+Comprehensive bias mitigation: Multiple debiasing techniques (preprocessing, in-processing, post-processing)
 
-### 🎯 Key Achievements
-- ✅ **84.45% Test Accuracy** (Target: >80%)
-- ✅ **Automated Dataset Pipeline** from Google Drive
-- ✅ **Professional Web Interface** with real-time predictions
-- ✅ **Modular Architecture** ready for bias detection (final project)
-- ✅ **Comprehensive Evaluation** with per-category performance metrics
+Explainability: Integrated LIME explanations for model predictions
 
-## 👥 Team Members & Contributions
+Fairness evaluation: 10+ fairness metrics including demographic parity, equal opportunity, and intersectional fairness
 
-| Team Member | Contribution | Percentage |
-|-------------|--------------|------------|
-| **Nithin Palyam** | Model architecture, training pipeline optimization, performance tuning, system integration | 50% |
-| **Lorenzo LaPlace** | Data preprocessing pipeline, Gradio interface development, documentation, automated dataset handling | 50% |
+Interactive interface: Gradio web app for real-time testing and comparison
 
-*Each member contributed equally to project planning, testing, and evaluation.*
+🎯 Key Features
+Feature	Description
+High Accuracy	88.19% baseline accuracy on 24 job categories
+Bias Reduction	100% elimination of name-based gender bias
+Multi-Attribute Fairness	Gender, race, age, educational privilege, disability
+Explainability	LIME explanations for model decisions
+Interactive Demo	Gradio interface with real-time bias analysis
+Open Source	Fully auditable codebase for transparency
+📊 Performance Summary
+Metric	Baseline	Debiased	Improvement
+Accuracy	88.19%	87.73%	-0.46% (minimal trade-off)
+Gender Bias	0.067	0.000	100% reduction
+Racial Bias	0.400	0.133	66.75% reduction
+Intersectional Fairness	0.556	0.750	+34.89% improvement
+🚀 Quick Start
+Prerequisites
+Python 3.8 or higher
 
-## 🚀 Quick Start Guide
+8GB+ RAM
 
-### Prerequisites
-* - Python 3.8+
-* - Google Colab (recommended) or local environment with 4GB+ GPU RAM
+GPU recommended (4GB+ VRAM) but not required
 
-### Installation & Setup
+5GB free disk space
 
-# Option 1: Google Colab (Recommended for Best Performance)
+Installation
+Clone the repository:
+
 bash
-# Clone repository
-* !git clone https://github.com/Nithin2311/TAIS-MidtermProject.git
-* %cd TAIS-MidtermProject
+git clone https://github.com/Nithin2311/TAIS-FinalProject.git
+cd TAIS-FinalProject
+Create and activate a virtual environment:
 
-# Install dependencies
-!pip install -r requirements.txt
+bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+Install dependencies:
 
-# Run training (automatically downloads dataset)
-!python train.py
-
-# Launch web interface
-!python gradio_app.py
-
-# Option 2: Local Installation
-
-# Clone repository
-* git clone https://github.com/Nithin2311/TAIS-MidtermProject.git
-* cd TAIS-MidtermProject
-
-# Create virtual environment (recommended)
-* python -m venv venv
-* source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+bash
 pip install -r requirements.txt
+Download NLTK data (for text processing):
 
-# Run training
-python train.py
+bash
+python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
+🏃‍♂️ Running the System
+Step 1: Train the Baseline Model
+bash
+python train_baseline.py
+Downloads the dataset automatically
 
-# Launch web interface
+Trains RoBERTa-base on resume data
+
+Saves model to models/resume_classifier_baseline/
+
+Generates results in results/baseline_results.json
+
+Expected Output: ~88% accuracy, training time ~2 hours on Tesla T4 GPU
+
+Step 2: Train the Debiased Model
+bash
+python train_debiased.py
+Applies bias mitigation techniques
+
+Uses adversarial training and counterfactual augmentation
+
+Saves model to models/resume_classifier_debiased/
+
+Generates results in results/debiased_results.json
+
+Expected Output: ~87.7% accuracy with reduced bias
+
+Step 3: Run Bias Analysis
+bash
+python bias_analysis.py
+Compares baseline vs. debiased models
+
+Calculates 10+ fairness metrics
+
+Generates comprehensive bias report
+
+Saves comparison to results/model_comparison.json
+
+Expected Output: Bias reduction statistics and fairness analysis
+
+Step 4: Launch the Web Interface
+bash
 python gradio_app.py
+Starts Gradio web server
 
-# Source Declaration
-* Dataset:	resume-dataSet from kaggle Academic Use	Used as-is for academic purposes
-* Base Model:	RoBERTa-base from HuggingFace	MIT License	Fine-tuned on resume data
-* Libraries: 	PyTorch, Transformers, Gradio, Scikit-learn	Various Open Source	Used according to license terms
+Access at http://localhost:7860
 
-# Original Code
-* Data preprocessing pipeline - Original implementation,
-* Automated dataset download system - Original implementation,
-* Model training framework - Original implementation,
-* Gradio interface design - Original implementation,
-* Evaluation metrics system - Original implementation,
-* Project architecture - Original design,
-* All core machine learning components and system architecture were implemented from scratch by the team members.
+Compare both models in real-time
 
-# Troubleshooting
-* Common Issues & Solutions
-* -CUDA Out of Memory:	Reduce batch size to 8 in config.py
-* -Dataset Download Failed:	Check internet connection; URL: https://drive.google.com/uc?id=1QWJo26V-95XF1uGJKKVnnf96uaclAENk
-* -Import Errors:	Run pip install -r requirements.txt
-* -Gradio Not Loading:	Check firewall settings or use share=True in launch()
+View LIME explanations and bias scores
 
-# Performance Tips
-* -Use Google Colab Pro for faster GPU training
-* -Enable FP16 training in config.py
-* -Reduce MAX_LENGTH to 256 for faster inference
-* -Use batch processing for multiple resumes
+📁 Project Structure
+text
+TAIS-FinalProject/
+├── models/                          # Trained models
+│   ├── resume_classifier_baseline/  # Baseline model
+│   └── resume_classifier_debiased/  # Debiased model
+├── data/                            # Dataset
+│   ├── raw/                         # Original data
+│   └── processed/                   # Processed data
+├── results/                         # Evaluation results
+├── config.py                        # Configuration settings
+├── data_processor.py                # Data preprocessing
+├── model_trainer.py                 # Model training utilities
+├── train_baseline.py                # Baseline training script
+├── train_debiased.py                # Debiased training script
+├── bias_analyzer.py                 # Bias detection and analysis
+├── bias_analysis.py                 # Model comparison script
+├── fairness_metrics.py              # Fairness metrics calculation
+├── demographic_synthesizer.py       # Demographic signal generation
+├── gradio_app.py                    # Web interface
+└── requirements.txt                 # Dependencies
+🔧 Configuration
+Key parameters in config.py:
 
-# References
-* Dataset: https://www.kaggle.com/datasets/snehaanbhawal/resume-dataset from kaggle 
-* RoBERTa Paper: Liu et al. (2019) "RoBERTa: A Robustly Optimized BERT Pretraining Approach"
-* HuggingFace Transformers: Wolf et al. (2020) "Transformers: State-of-the-Art Natural Language Processing"
-* Course Materials: CAI 6605 Trustworthy AI Systems, USF Fall 2025
+Parameter	Default Value	Description
+MODEL_NAME	'roberta-base'	Base transformer model
+BATCH_SIZE	16	Training batch size
+LEARNING_RATE	3e-5	Learning rate
+ADVERSARIAL_LAMBDA	0.03	Debiasing strength
+NUM_EPOCHS	15	Training epochs
+MAX_LENGTH	512	Maximum sequence length
+📊 Dataset
+Source: Updated Resume Dataset (Kaggle)
 
-# License: 
-* This project is for academic purposes as part of CAI 6605: Trustworthy AI Systems at the University of South Florida. All rights reserved by the course instructors and team members.
+Statistics:
 
-# Course Information
-* Course: CAI 6605 - Trustworthy AI Systems
-* University: University of South Florida
-* Semester: Fall 2025
-* Instructor: Guangjing Wang
-* Team: Group 15 (Nithin Palyam, Lorenzo LaPlace)
-* Submission Date: October 2025
+2,484 resumes
 
+24 job categories
 
+Split: 70% train, 15% validation, 15% test
+
+Categories: ACCOUNTANT, ADVOCATE, AGRICULTURE, ..., TEACHER
+
+Preprocessing:
+
+Text cleaning and normalization
+
+Demographic signal extraction
+
+Counterfactual augmentation for underperforming categories
+
+Fairness-aware sample weighting
+
+🤖 Model Architecture
+Baseline Model
+Base: RoBERTa-base (125M parameters)
+
+Loss: Weighted Cross-Entropy + Focal Loss
+
+Regularization: Dropout (0.25), Gradient clipping
+
+Optimizer: AdamW with linear warmup
+
+Debiased Model
+Additional Components:
+
+Correlation Penalty Loss (λ=0.025)
+
+Demographic signal extraction
+
+Counterfactual augmentation
+
+Fairness-aware sample reweighting
+
+Training: Adversarial debiasing with early stopping
+
+⚖️ Fairness Metrics Implemented
+The system evaluates 10+ fairness metrics:
+
+Demographic Parity Difference
+
+Equal Opportunity Difference
+
+Disparate Impact Ratio
+
+Accuracy Equality Difference
+
+Equalized Odds Difference
+
+Treatment Equality Ratio
+
+Intersectional Fairness
+
+Name Substitution Bias
+
+Counterfactual Fairness
+
+Statistical Parity
+
+🌐 Web Interface Features
+The Gradio interface (gradio_app.py) provides:
+
+Dual-Model Comparison: Switch between baseline and debiased models
+
+Real-Time Classification: Paste any resume text for instant classification
+
+Bias Analysis: View inferred demographics and bias scores
+
+LIME Explanations: Visual feature importance for predictions
+
+Example Resumes: Pre-loaded examples for quick testing
+
+Performance Metrics: Side-by-side model comparison
+
+📈 Results Interpretation
+Reading Output Files
+results/baseline_results.json: Baseline model performance
+
+results/debiased_results.json: Debiased model performance
+
+results/model_comparison.json: Detailed bias comparison
+
+results/training_results.json: Per-category accuracy analysis
+
+Key Metrics to Monitor
+Metric	Ideal Value	Our Results
+Accuracy	>80%	87.73%
+Gender Bias	0.000	✅ 0.000
+Racial Bias	<0.100	0.133
+Intersectional Fairness	>0.700	✅ 0.750
+Accuracy-Fairness Trade-off	<2%	✅ 0.46%
+🛠️ Troubleshooting
+Common Issues
+"CUDA out of memory"
+
+bash
+# Reduce batch size in config.py
+BATCH_SIZE = 8  # Change from 16 to 8
+"Model not found" errors
+
+bash
+# Ensure models are trained first
+python train_baseline.py
+python train_debiased.py
+Slow training
+
+bash
+# Enable GPU if available
+# Reduce MAX_LENGTH in config.py
+MAX_LENGTH = 256  # Change from 512
+Missing dependencies
+
+bash
+# Update pip and reinstall
+pip install --upgrade pip
+pip install -r requirements.txt
+Memory Requirements
+Component	Minimum	Recommended
+RAM	8GB	16GB
+GPU VRAM	4GB	8GB+
+Disk Space	5GB	10GB
+📚 Citation
+If you use this project in your research, please cite:
+
+bibtex
+@software{TAIS_Resume_Classifier_2025,
+  author = {Palyam, Nithin and LaPlace, Lorenzo},
+  title = {Enhanced Resume Classification System with Comprehensive Bias Mitigation},
+  year = {2025},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/Nithin2311/TAIS-FinalProject}}
+}
+📄 License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+👥 Team Contributions
+Nithin Palyam:
+
+Model architecture and training pipeline
+
+Bias mitigation implementation
+
+Fairness metrics calculation
+
+Documentation and testing
+
+Lorenzo LaPlace:
+
+Data preprocessing pipeline
+
+Gradio interface development
+
+LIME/SHAP explainability features
+
+System evaluation and validation
+
+🔗 Useful Links
+Project Repository
+
+Hugging Face Models
+
+Gradio Documentation
+
+AI Fairness 360 Toolkit
+
+Trustworthy AI Guidelines
+
+🙏 Acknowledgments
+Dataset: Kaggle Resume Dataset
+
+Base Model: RoBERTa by Facebook AI
+
+Fairness Framework: Inspired by IBM AI Fairness 360
+
+Course: CAI 6605 Trustworthy AI Systems, University of South Florida
